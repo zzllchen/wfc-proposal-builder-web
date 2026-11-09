@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WFC Proposal Builder</title>
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="stylesheet" href="css/app.css">
+<link rel="stylesheet" href="css/shell.css">
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="brand"><img id="topLogo" alt="WFC Systems"></div>
+    <nav id="tabs" class="seg">
+      <button class="tab active" data-tab="proposal" aria-current="page">Proposal</button>
+      <button class="tab" data-tab="sim" title="The layout and the AMR in 3D, with live readings">Simulation</button>
+      <button class="tab" data-tab="concept" title="The 3D concept video and the recorded simulation">Concept video</button>
+      <button class="tab" disabled aria-disabled="true" title="Coming soon">Quotation</button>
+    </nav>
+    <div class="sp"></div>
+    <span id="saveHint" title="Your work is saved automatically on this PC">Saved</span>
+    <button id="connBtn" class="btn conn" title="Connect Claude and Google AI"></button>
+    <details id="fileMenu" class="menu">
+      <summary class="btn">File</summary>
+      <div class="menulist">
+        <button data-act="open">Open project…</button>
+        <button data-act="save">Save project</button>
+        <button id="btnPptx" data-act="pptx" title="Each slide is a picture; the slide text is in the speaker notes">Save as PowerPoint</button>
+        <hr>
+        <button data-act="dup">Duplicate this proposal</button>
+      </div>
+    </details>
+    <button id="btnPdf" class="btn primary" title="Save as PDF">Save PDF</button>
+  </header>
+  <div id="docs">
+    <div id="docTabs" role="tablist"></div>
+    <details id="newMenu" class="menu">
+      <summary class="btn icon" title="New proposal">+</summary>
+      <div class="menulist">
+        <button data-new="brief">New from a brief…</button>
+        <button data-new="blank">New blank proposal</button>
+        <hr>
+        <button data-new="open">Open project…</button>
+      </div>
+    </details>
+  </div>
+  <aside id="side"></aside>
+  <main id="work">
+    <div id="stageBar">
+      <button id="prev" class="btn icon" title="Previous slide (left arrow)">‹</button>
+      <button id="next" class="btn icon" title="Next slide (right arrow)">›</button>
+      <div id="stageTitle"></div>
+      <div class="sp"></div>
+      <div id="viewSeg" class="seg" role="tablist" aria-label="How to view the proposal"><button class="tab active" data-view="slides">Slides</button><button class="tab" data-view="scroll">Scroll</button></div>
+      <button id="editLayout" class="btn" hidden title="Draw the areas, points and routes on the site layout">Edit layout</button>
+      <label class="inc"><input type="checkbox" id="incl"> In the proposal</label>
+    </div>
+    <div id="stage"><div id="stageSlide" class="slidewrap"><div class="scaler" style="width:1920px;height:1080px"></div></div></div>
+    <div id="scroll" hidden></div>
+    <div id="editor" hidden></div>
+    <section id="sim" hidden>
+      <div id="simStage"><canvas id="simCv" width="1920" height="1080"></canvas></div>
+      <div id="simMsg" hidden></div>
+      <div class="taskbar" id="taskBar" hidden>
+        <div class="pick"><span>From</span><select id="taskFrom" aria-label="From point"></select></div>
+        <button id="taskSwap" class="iconbtn" title="Swap the two points" aria-label="Swap the two points"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4L3 8l4 4"/><path d="M3 8h14"/><path d="M17 20l4-4-4-4"/><path d="M21 16H7"/></svg></button>
+        <div class="pick"><span>To</span><select id="taskTo" aria-label="To point"></select></div>
+        <button id="taskRun" class="btn primary">Run task</button>
+        <button id="taskDefault" class="btn ghost" title="Go back to the longest route, trip after trip" hidden>Back to the longest route</button>
+      </div>
+      <div class="simbar">
+        <button id="simPlay" class="btn primary">Pause</button>
+        <button id="simRestart" class="btn">Restart</button>
+        <div id="simSpeed" class="seg" aria-label="Playback speed"><button class="tab" data-v="1">1×</button><button class="tab" data-v="2">2×</button><button class="tab" data-v="4">4×</button><button class="tab" data-v="8">8×</button><button class="tab" data-v="16">16×</button></div>
+        <div class="sp"></div>
+        <span id="simNote"></span>
+        <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
+        <button id="simSave" class="btn">Save video</button>
+      </div>
+    </section>
+    <section id="concept" hidden>
+      <div class="cvbar">
+        <div id="cvSwitch" class="seg" aria-label="Video"><button class="tab active" data-v="ai">3D concept</button><button class="tab" data-v="sim">Simulation recording</button></div>
+        <div class="sp"></div>
+        <span id="cvNote"></span>
+        <button id="cvOpen" class="btn">Play another video…</button>
+        <input type="file" id="cvFile" accept="video/*" style="display:none">
+      </div>
+      <div id="cvStage"><video id="cvVideo" controls playsinline loop preload="metadata"></video></div>
+      <div id="cvEmpty" hidden><div class="simbox"><b>No concept video for this proposal yet.</b><span>Use “Play another video…” to show a video file from this PC, or ask Claude to make one: it turns a photo of the AMR into a short film of the AMR working at the client's site.</span></div></div>
+      <p id="cvCaption"></p>
+    </section>
+    <div id="film"></div>
+  </main>
+  <section id="start" hidden>
+    <div class="startbox">
+      <h2>Start a proposal</h2>
+      <p>Describe the project and add the pictures, or begin from scratch.</p>
+      <div class="startgrid">
+        <button type="button" class="scard primary" data-s="brief"><b>New from a brief</b><span>Paste a description or fill in a form. The tool does the rest.</span></button>
+        <button type="button" class="scard" data-s="blank"><b>Blank proposal</b><span>Fill in the form yourself.</span></button>
+        <button type="button" class="scard" data-s="open"><b>Open a project</b><span>Continue a saved file.</span></button>
+      </div>
+    </div>
+  </section>
+</div>
+<input type="file" id="fileOpen" accept=".json,application/json" style="display:none">
+<div id="intake" class="modal" hidden></div>
+<div id="conn" class="modal" hidden></div>
+<div id="printRoot"></div>
+<script src="js/img-data.js"></script>
+<script src="js/db.js"></script>
+<script src="js/calc.js"></script>
+<script src="js/walkway.js"></script>
+<script src="js/network.js"></script>
+<script src="js/floor.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/slides.js"></script>
+<script src="js/layout-editor.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/sim-ui.js"></script>
+<script src="js/concept.js"></script>
+<script src="js/intake.js"></script>
+<script src="js/intake-ai.js"></script>
+<script src="js/solver.js"></script>
+<script src="js/plan-ai.js"></script>
+<script src="js/image-ai.js"></script>
+<script src="js/smart.js"></script>
+<script src="js/photo-ai.js"></script>
+<script src="js/connections.js"></script>
+<script src="js/app.js"></script>
+<script src="js/intake-ui.js"></script>
+<script src="js/panel.js"></script>
+</body>
+</html>
