@@ -2,8 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WFC Proposal Builder</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Proposal Builder · WFC Systems</title>
+<meta name="description" content="Build, review and download AMR solution proposals for WFC Systems clients.">
+<meta name="theme-color" content="#204CBA">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="assets/favicon.ico" sizes="any">
 <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192.png">
@@ -11,21 +14,21 @@
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/shell.css">
 </head>
-<body>
+<body data-pane="form">
 <div id="app">
   <header id="top">
-    <div class="brand"><img id="topLogo" alt="WFC Systems"></div>
-    <nav id="tabs" class="seg">
+    <div class="brand"><img id="topLogo" alt="WFC Systems"><span class="brand-name">Proposal Builder</span></div>
+    <nav id="tabs" class="seg" aria-label="Views">
       <button class="tab active" data-tab="proposal" aria-current="page">Proposal</button>
       <button class="tab" data-tab="sim" title="The layout and the AMR in 3D, with live readings">Simulation</button>
       <button class="tab" data-tab="concept" title="The 3D concept video and the recorded simulation">Concept video</button>
-      <button class="tab" disabled aria-disabled="true" title="Coming soon">Quotation</button>
+      <button class="tab" disabled aria-disabled="true" title="Coming soon">Quotation <span class="soon">Soon</span></button>
     </nav>
     <div class="sp"></div>
-    <span id="saveHint" title="Your work is saved automatically on this PC">Saved</span>
-    <button id="connBtn" class="btn conn" title="Connect Claude and Google AI"></button>
+    <span id="saveHint" class="savestate" data-state="saved" role="status" aria-live="polite" title="Your work is saved automatically on this device">Saved</span>
+    <button id="connBtn" class="btn conn quiet" title="Connect Claude and Google AI"></button>
     <details id="fileMenu" class="menu">
-      <summary class="btn">File</summary>
+      <summary class="btn quiet" aria-label="File menu"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span class="lbl">File</span></summary>
       <div class="menulist">
         <button data-act="open">Open project…</button>
         <button data-act="save">Save project</button>
@@ -34,12 +37,12 @@
         <button data-act="dup">Duplicate this proposal</button>
       </div>
     </details>
-    <button id="btnPdf" class="btn primary" title="Save as PDF">Save PDF</button>
+    <button id="btnPdf" class="btn primary" title="Download the proposal as a PDF"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span><span class="lbl-l">Download </span>PDF</span></button>
   </header>
   <div id="docs">
-    <div id="docTabs" role="tablist"></div>
+    <div id="docTabs" role="tablist" aria-label="Open proposals"></div>
     <details id="newMenu" class="menu">
-      <summary class="btn icon" title="New proposal">+</summary>
+      <summary class="btn quiet newbtn" title="Start a new proposal"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg><span class="lbl">New</span></summary>
       <div class="menulist">
         <button data-new="brief">New from a brief…</button>
         <button data-new="blank">New blank proposal</button>
@@ -48,16 +51,18 @@
       </div>
     </details>
   </div>
-  <aside id="side"></aside>
+  <aside id="side" aria-label="Proposal details"></aside>
   <main id="work">
     <div id="stageBar">
-      <button id="prev" class="btn icon" title="Previous slide (left arrow)">‹</button>
-      <button id="next" class="btn icon" title="Next slide (right arrow)">›</button>
+      <div class="pager">
+        <button id="prev" class="btn icon" aria-label="Previous slide" title="Previous slide (left arrow)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+        <button id="next" class="btn icon" aria-label="Next slide" title="Next slide (right arrow)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      </div>
       <div id="stageTitle"></div>
       <div class="sp"></div>
       <div id="viewSeg" class="seg" role="tablist" aria-label="How to view the proposal"><button class="tab active" data-view="slides">Slides</button><button class="tab" data-view="scroll">Scroll</button></div>
       <button id="editLayout" class="btn" hidden title="Draw the areas, points and routes on the site layout">Edit layout</button>
-      <label class="inc"><input type="checkbox" id="incl"> In the proposal</label>
+      <label class="inc switch" title="Include this slide in the proposal"><input type="checkbox" id="incl"><span class="track" aria-hidden="true"></span><span class="lbl">Include</span></label>
     </div>
     <div id="stage"><div id="stageSlide" class="slidewrap"><div class="scaler" style="width:1920px;height:1080px"></div></div></div>
     <div id="scroll" hidden></div>
@@ -91,22 +96,27 @@
         <input type="file" id="cvFile" accept="video/*" style="display:none">
       </div>
       <div id="cvStage"><video id="cvVideo" controls playsinline loop preload="metadata"></video></div>
-      <div id="cvEmpty" hidden><div class="simbox"><b>No concept video for this proposal yet.</b><span>Use “Play another video…” to show a video file from this PC, or ask Claude to make one: it turns a photo of the AMR into a short film of the AMR working at the client's site.</span></div></div>
+      <div id="cvEmpty" hidden><div class="simbox"><b>No concept video for this proposal yet</b><span>Use “Play another video…” to show a video file from this device, or ask Claude to make one: it turns a photo of the AMR into a short film of the AMR working at the client's site.</span></div></div>
       <p id="cvCaption"></p>
     </section>
-    <div id="film"></div>
+    <div id="film" aria-label="All slides"></div>
   </main>
   <section id="start" hidden>
     <div class="startbox">
+      <p class="eyebrow">Proposal Builder</p>
       <h2>Start a proposal</h2>
-      <p>Describe the project and add the pictures, or begin from scratch.</p>
+      <p class="lead">Describe the project and add the pictures, or begin from scratch.</p>
       <div class="startgrid">
-        <button type="button" class="scard primary" data-s="brief"><b>New from a brief</b><span>Paste a description or fill in a form. The tool does the rest.</span></button>
-        <button type="button" class="scard" data-s="blank"><b>Blank proposal</b><span>Fill in the form yourself.</span></button>
-        <button type="button" class="scard" data-s="open"><b>Open a project</b><span>Continue a saved file.</span></button>
+        <button type="button" class="scard primary" data-s="brief"><span class="sico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15.5l-1.9-4.6L5.5 9l4.6-1.4z"/><path d="M19 15l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z"/></svg></span><b>New from a brief</b><span>Paste a description or fill in a short form. The tool works out the solution.</span></button>
+        <button type="button" class="scard" data-s="blank"><span class="sico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></span><b>Blank proposal</b><span>Fill in the details yourself, step by step.</span></button>
+        <button type="button" class="scard" data-s="open"><span class="sico"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span><b>Open a project</b><span>Continue a project file you saved earlier.</span></button>
       </div>
     </div>
   </section>
+  <nav id="mobileNav" aria-label="Show">
+    <button type="button" data-pane="form" class="on" aria-pressed="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>Details</button>
+    <button type="button" data-pane="preview" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>Preview</button>
+  </nav>
 </div>
 <input type="file" id="fileOpen" accept=".json,application/json" style="display:none">
 <div id="intake" class="modal" hidden></div>
@@ -135,5 +145,6 @@
 <script src="js/app.js"></script>
 <script src="js/intake-ui.js"></script>
 <script src="js/panel.js"></script>
+<script src="js/shell-ui.js"></script>
 </body>
 </html>

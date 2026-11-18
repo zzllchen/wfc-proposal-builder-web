@@ -3,7 +3,7 @@
 (function () {
   'use strict';
   const C = WFCCalc, DB = WFCDB, SL = WFCSlides, num = C.num, esc = SL.esc;
-  const LS = 'wfc-proposal-builder-v3', LS_OLD = 'wfc-proposal-builder-v2';
+  const LS = 'wfc-proposal-builder-v3', LS_OLD = 'wfc-proposal-builder-v2', APP_TITLE = 'Proposal Builder · WFC Systems';
   const qs = new URLSearchParams(location.search);
   const printMode = !!qs.get('print');
   const volatile = !!(qs.get('preset') || qs.get('state'));   // ?preset= is a throwaway preview: never overwrite the saved proposals
@@ -41,17 +41,19 @@
     } catch (e) { /* ignore */ }
     return null;
   }
+  // the status pill in the top bar: saved, saving, busy (PDF), done or error
+  function status(state, text) { const h = $('#saveHint'); if (!h) return; h.dataset.state = state; h.textContent = text; h.title = text; }
   let saveT;
   function persist() {
     if (volatile) return;
     clearTimeout(saveT);
+    const h = $('#saveHint'); if (h && h.dataset.state !== 'busy') status('saving', 'Saving…');
     saveT = setTimeout(() => {
-      const h = $('#saveHint');
       try {
         if (docs[act]) docs[act].cur = cur;
         localStorage.setItem(LS, JSON.stringify({ v: 3, active: act, docs: docs.map(d => ({ id: d.id, S: d.S, cur: d.cur, h: d.h, ph: d.ph })) }));
-        h.textContent = 'Saved';
-      } catch (e) { h.textContent = 'Not auto-saved (too many photos for the browser). Use File, Save project.'; }
+        if (h && h.dataset.state !== 'busy') { status('saved', 'Saved'); h.title = 'All changes are saved on this device'; }
+      } catch (e) { status('error', 'Not auto-saved (too many photos for the browser). Use File, Save project.'); }
     }, 400);
   }
 
@@ -249,6 +251,18 @@
       if (miss) left[sec.id] = (left[sec.id] || 0) + 1;
     })));
     FORM.forEach(sec => { const t = $(`[data-todo="${sec.id}"]`); if (t) { const n = left[sec.id] || 0; t.textContent = n ? `${n} to fill in` : ''; t.hidden = !n; } });
+    renderProgress(left);
+  }
+  // the summary at the top of the form: how many steps are complete and where to go next
+  function renderProgress(left) {
+    const box = $('#progress'); if (!box) return;
+    const steps = FORM.map(sec => ({ id: sec.id, title: sec.title, left: sec.blocks ? (left[sec.id] || 0) : (D && D.fleet && D.fleet.ok ? 0 : 1) }));
+    const done = steps.filter(s => !s.left).length, total = steps.length, next = steps.find(s => s.left);
+    steps.forEach(s => { const d = $(`details.sec[data-sec="${s.id}"]`); if (d) d.classList.toggle('done', !s.left); });
+    box.classList.toggle('complete', !next);
+    const nleft = Object.keys(left).reduce((a, k) => a + left[k], 0);
+    box.innerHTML = `<div class="ph"><b>Proposal details</b><span>${done} of ${total} steps done</span></div><div class="bar" role="progressbar" aria-label="Steps done" aria-valuemin="0" aria-valuemax="${total}" aria-valuenow="${done}"><i style="width:${Math.round(done / total * 100)}%"></i></div>`
+      + (next ? `<div class="pn"><span>${nleft ? `${nleft} required ${pl(nleft, 'field', 'fields')} left` : 'Check the fleet calculation'}</span><button type="button" data-goto="${next.id}">Next: ${esc(next.title)} →</button></div>` : '<div class="pn">Everything required is filled in. Ready to download.</div>');
   }
 
   function fieldHtml(f) {
@@ -338,7 +352,7 @@
 
   /* ---------- side panel ---------- */
   function renderSide() {
-    $('#side').innerHTML = FORM.map((sec, i) => `<details class="sec" data-sec="${sec.id}" ${openSec === sec.id ? 'open' : ''}><summary><span class="num">${i + 1}</span><span class="t"><b>${sec.title}</b><small data-sub="${sec.id}"></small></span><span class="todo" data-todo="${sec.id}" hidden></span></summary><div class="sbody" id="body-${sec.id}">${sec.html ? sec.html() : sec.blocks.map(blockHtml).join('')}</div></details>`).join('');
+    $('#side').innerHTML = '<div class="progress" id="progress" aria-live="polite"></div>' + FORM.map((sec, i) => `<details class="sec" data-sec="${sec.id}" ${openSec === sec.id ? 'open' : ''}><summary><span class="num">${i + 1}</span><span class="t"><b>${sec.title}</b><small data-sub="${sec.id}"></small></span><span class="todo" data-todo="${sec.id}" hidden></span></summary><div class="sbody" id="body-${sec.id}">${sec.html ? sec.html() : sec.blocks.map(blockHtml).join('')}</div></details>`).join('');
     updateSubs();
   }
   function updateSubs() { FORM.forEach(sec => { const el = $(`[data-sub="${sec.id}"]`); if (el) el.textContent = sec.sub(); }); }
@@ -368,7 +382,7 @@
     if (printMode) return;
     const film = $('#film'), sig = out.map(s => s.id).join();
     if (sig !== filmSig) {
-      film.innerHTML = out.map((s, i) => `<div class="thumb" data-id="${s.id}"><span class="no">${i + 1}</span><input class="tick" type="checkbox" data-tick="${s.id}" title="In the proposal"><div class="tw"><div class="scaler"></div></div><div class="cap">${esc(s.name)}</div></div>`).join('');
+      film.innerHTML = out.map((s, i) => `<div class="thumb" data-id="${s.id}"><div class="tw"><div class="scaler"></div></div><div class="cap"><span class="no">${i + 1}</span><span class="nm">${esc(s.name)}</span><input class="tick" type="checkbox" data-tick="${s.id}" title="Include this slide in the proposal" aria-label="Include ${esc(s.name)} in the proposal"></div></div>`).join('');
       filmSig = sig; filmCache = {};
     }
     out.forEach((s, i) => {
@@ -498,7 +512,8 @@
     $('#fileOpen').addEventListener('change', openProject);
     $('#start').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (!b) return; if (b.dataset.s === 'brief') WFCIntakeUI.open(); else if (b.dataset.s === 'blank') addDoc(WFCPresets.make('blank')); else $('#fileOpen').click(); });
     if (window.ResizeObserver) new ResizeObserver(() => drawStage()).observe($('#stage')); else window.addEventListener('resize', drawStage);
-    window.addEventListener('afterprint', () => { document.title = 'WFC Proposal Builder'; });
+    window.addEventListener('afterprint', () => { document.title = APP_TITLE; });
+    side.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) { focusSection(g.dataset.goto); const d = $(`details.sec[data-sec="${g.dataset.goto}"]`); if (d) d.scrollIntoView({ block: 'start', behavior: 'smooth' }); } });
   }
 
   /* ---------- files ---------- */
@@ -509,7 +524,7 @@
   /* ---------- PDF and PowerPoint ----------
      Run from Start.bat, the local server prints a clean PDF (no header or footer) and the PowerPoint is built from it, one picture per slide.
      Opened straight from the file, Save PDF falls back to the browser's print window. */
-  const hint = t => { const h = $('#saveHint'); if (h) h.textContent = t; };
+  const hint = t => status(/fail/i.test(t) ? 'error' : /…$/.test(t) ? 'busy' : /saved to|untick/i.test(t) ? 'done' : 'saved', t);
   const busy = on => { ['#btnPdf', '#btnPptx'].forEach(id => { $(id).disabled = on; }); };
   let serverOk = null;
   async function hasServer() {
