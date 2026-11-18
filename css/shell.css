@@ -396,8 +396,24 @@ h3.warn .cnt { background: #FFF3BF; color: #6E5200; }
 body[data-tab="sim"] #stageBar, body[data-tab="sim"] #stage, body[data-tab="sim"] #scroll, body[data-tab="sim"] #editor, body[data-tab="sim"] #film,
 body[data-tab="concept"] #stageBar, body[data-tab="concept"] #stage, body[data-tab="concept"] #scroll, body[data-tab="concept"] #editor, body[data-tab="concept"] #film { display: none !important; }
 #sim { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-#simStage { flex: 1; min-height: 0; background: #EBEFF6; border-radius: var(--r-lg); padding: 10px; display: flex; }
-#simCv { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: var(--r-sm); background: #fff; }
+#simStage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; background: #EEF1F7; border-radius: var(--r-lg); padding: 12px; overflow: hidden; }
+#simCv { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; aspect-ratio: 16 / 9; border-radius: 12px; background: #fff; box-shadow: 0 8px 28px rgba(11,18,32,.10), 0 1px 3px rgba(11,18,32,.06); }
+.ico.fill { fill: currentColor; stroke: none; }
+.simhint { display: none; margin: 0; }
+.tasklbl { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; }
+.simplay { display: flex; gap: 8px; }
+#simPlay { min-width: 116px; }
+#simFull { margin-left: 2px; }
+
+/* presentation mode: the simulation alone, full screen; the controls float at the bottom and fade while it plays */
+#sim.presenting { position: fixed; inset: 0; z-index: 300; margin: 0; padding: 12px; gap: 0; background: #EEF1F7; }
+#sim.presenting #simStage { padding: 0; border-radius: 0; background: transparent; }
+#sim.presenting #simCv { border-radius: 10px; }
+#sim.presenting .taskbar, #sim.presenting #simSave, #sim.presenting #simNote, #sim.presenting .simbar .sp { display: none !important; }
+#sim.presenting .simbar { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 24px); padding: 8px; border-radius: 18px; background: rgba(255,255,255,.95); border: 1px solid var(--hair); box-shadow: 0 12px 36px rgba(11,18,32,.18); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: opacity .3s, transform .3s; }
+#sim.presenting.idle .simbar { opacity: 0; transform: translate(-50%, 14px); pointer-events: none; }
+#sim.presenting.idle { cursor: none; }
+body.sim-presenting { overflow: hidden; }
 #simMsg, #cvEmpty { flex: 1; display: flex; align-items: center; justify-content: center; background: #EBEFF6; border-radius: var(--r-lg); padding: 20px; }
 #simMsg .simbox, #cvEmpty .simbox { background: var(--surface); border-radius: var(--r-xl); padding: 28px 32px; max-width: 520px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); }
 #simMsg .simbox b, #cvEmpty .simbox b { font-size: 18px; } #simMsg .simbox span, #cvEmpty .simbox span { color: var(--text-3); line-height: 1.5; }
@@ -489,6 +505,11 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
   #editLayout { order: 7; }
   .mdrops, .mcols, .cgrid { grid-template-columns: minmax(0, 1fr); }
   .ccard { min-width: 0; }
+  #sim { overflow-y: auto; }
+  #simStage { flex: none; }
+  #simCv { width: 100%; max-height: none; }
+  #sim.presenting #simStage { flex: 1; }
+  #sim.presenting #simCv { width: auto; max-height: 100%; }
   .crow input[type=password], .mkey input[type=password] { min-width: 0; flex: 1 1 160px; }
 }
 
@@ -535,10 +556,30 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
   .simbar .seg .tab { padding: 0 9px; }
   #simNote { flex-basis: 100%; order: 10; }
   .taskbar:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) var(--tap); gap: 8px; }
-  .taskbar .pick:first-child { grid-column: 1; grid-row: 1; }
-  .taskbar .pick:nth-of-type(2) { grid-column: 1; grid-row: 2; }
-  #taskSwap { grid-column: 2; grid-row: 1 / span 2; height: 100%; }
+  .tasklbl { grid-column: 1 / -1; grid-row: 1; }
+  .taskbar .pick:first-of-type { grid-column: 1; grid-row: 2; }
+  .taskbar .pick:nth-of-type(2) { grid-column: 1; grid-row: 3; }
+  #taskSwap { grid-column: 2; grid-row: 2 / span 2; height: 100%; }
   #taskRun, #taskDefault { grid-column: 1 / -1; }
+  #simStage { padding: 8px; }
+  #simPlay { min-width: 0; }
+  .simbar .lbl { display: none; }
+  #simRestart, #simSave, #simFull { width: var(--tap); padding: 0; }
+  #sim.presenting { padding: 6px; }
+  #sim.presenting .simbar { gap: 6px; }
+  #sim.presenting #simPlay span { display: none; }
+  #sim.presenting #simPlay { width: var(--tap); padding: 0; }
+}
+/* phones held sideways and other short screens: a compact bar so the picture stays in view */
+@media (max-height: 500px) {
+  #sim.presenting { padding: 6px; }
+  #sim.presenting .simbar { gap: 6px; padding: 6px; bottom: max(10px, env(safe-area-inset-bottom)); }
+  #sim.presenting .simbar .lbl, #sim.presenting #simPlay span { display: none; }
+  #sim.presenting #simPlay, #sim.presenting #simRestart, #sim.presenting #simFull { width: var(--tap); min-width: 0; padding: 0; }
+  #sim.presenting .simbar .seg .tab { padding: 0 10px; }
+}
+@media (max-width: 600px) and (orientation: portrait) {
+  #sim.presenting #simHint { display: block; position: absolute; top: max(16px, env(safe-area-inset-top)); left: 16px; right: 16px; text-align: center; font-weight: 600; color: var(--text-2); background: rgba(255,255,255,.9); border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px; }
 }
 @media (max-width: 600px) {
   .savestate { max-width: 96px; padding: 0 6px; margin: 0; }

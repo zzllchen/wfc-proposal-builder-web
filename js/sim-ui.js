@@ -2,7 +2,8 @@
    1.5T pallet-jack AMR: white body, black base and forks, lidar mast, lifting a wooden pallet) at the stated speed, with live readings: speed (it really speeds
    up, slows for corners and creeps in to dock), distance, seconds, pallets moved, rate, battery. The default simulation is the LONGEST route, trip after trip.
    Pick any two points and press "Run task": the AMR drives to the first, picks up, carries to the second and puts down, with the leg-by-leg times.
-   Click a station and the AMR is sent there next. "Save video" records the picture to a video file. All drawing is on one canvas, 1920 x 1080. */
+   Click a station and the AMR is sent there next. "Save video" records the picture to a video file. All drawing is on one canvas, 1920 x 1080.
+   "Full screen" (or F, or a double-click on the picture) presents the simulation alone with only the playback controls; Esc leaves it. */
 (function (root) {
   'use strict';
   const Sim = root.WFCSim, esc = root.WFCSlides.esc;
@@ -409,12 +410,43 @@
   }
   function finishRecording() { const r = recState; if (!r) return; setTimeout(() => { try { r.rec.stop(); } catch (e) { recState = null; ui(); } }, 600); playing = false; }   // hold the last frame a moment
 
+  /* ---------- presentation mode: the simulation alone, full screen, with only the playback controls ---------- */
+  const ICON = {
+    play: '<svg class="ico fill" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>',
+    pause: '<svg class="ico fill" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>',
+    full: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>',
+    exit: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/></svg>'
+  };
+  let presenting = false, idleT = 0;
+  const simEl = () => $('#sim');
+  function present(on) {
+    const el = simEl(); if (!el || presenting === on) return;
+    presenting = on; el.classList.toggle('presenting', on); document.body.classList.toggle('sim-presenting', on);
+    if (on) {
+      if (el.requestFullscreen && document.fullscreenEnabled && !document.fullscreenElement) el.requestFullscreen({ navigationUI: 'hide' }).then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* phones only */ } }).catch(() => {});
+    } else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    wake(); ui();
+  }
+  // in presentation mode the controls fade away while the picture plays, and come back on any movement or tap
+  function wake() {
+    const el = simEl(); if (!el) return; el.classList.remove('idle'); clearTimeout(idleT);
+    if (presenting) idleT = setTimeout(() => { if (presenting && playing && !el.querySelector('.simbar:hover')) el.classList.add('idle'); }, 2800);
+  }
+  const typing = e => { const t = e.target; return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); };
+  function onKey(e) {
+    if (document.body.dataset.tab !== 'sim' || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === 'f' || e.key === 'F') { present(!presenting); e.preventDefault(); }
+    else if (e.key === 'Escape' && presenting) { present(false); e.preventDefault(); }
+    else if (e.key === ' ' && (e.target === document.body || e.target === cv || presenting)) { $('#simPlay').click(); wake(); e.preventDefault(); }
+  }
+
   /* ---------- the screen ---------- */
   function ui() {
     const ok = model && model.ok;
     $('#simStage').hidden = !ok; $('#simMsg').hidden = !!ok;
     if (!ok) $('#simMsg').innerHTML = `<div class="simbox"><b>${esc((model && model.reason) || 'Nothing to show yet.')}</b><span>The simulation uses the routes, speed and cycle time of this proposal.</span></div>`;
-    $('#simPlay').textContent = playing ? 'Pause' : 'Play';
+    $('#simPlay').innerHTML = (playing ? ICON.pause : ICON.play) + `<span>${playing ? 'Pause' : 'Play'}</span>`;
+    const fb = $('#simFull'); if (fb) { fb.innerHTML = (presenting ? ICON.exit : ICON.full) + `<span class="lbl">${presenting ? 'Exit full screen' : 'Full screen'}</span>`; fb.title = presenting ? 'Exit full screen (Esc)' : 'Present full screen (F)'; fb.setAttribute('aria-pressed', String(presenting)); fb.disabled = !ok; }
     document.querySelectorAll('#simSpeed button').forEach(b => b.classList.toggle('active', +b.dataset.v === speedF));
     document.querySelectorAll('#simView button').forEach(b => b.classList.toggle('active', b.dataset.v === view));
     ['simPlay', 'simRestart', 'simSpeed', 'simView', 'taskBar'].forEach(id => { const e = $('#' + id); if (e) e.classList.toggle('lock', !!recState); });
@@ -443,6 +475,11 @@
     cv.addEventListener('mousemove', e => { if (recState) return; hover = hitAt(toCanvas(e)); cv.style.cursor = hover ? 'pointer' : 'default'; });
     cv.addEventListener('mouseleave', () => { hover = null; });
     cv.addEventListener('click', e => { const h = hitAt(toCanvas(e)); if (h) callStation(h.i); });
+    $('#simFull').addEventListener('click', () => present(!presenting));
+    cv.addEventListener('dblclick', () => present(!presenting));
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && presenting) present(false); });   // Esc in real full screen
+    ['mousemove', 'pointerdown', 'touchstart'].forEach(ev => simEl().addEventListener(ev, wake, { passive: true }));
     last = performance.now(); raf = requestAnimationFrame(loop);
   }
   // called by the app whenever the proposal changes while the tab is open (and when the tab opens)
@@ -456,6 +493,7 @@
     set: o => { if (o.t !== undefined) t = o.t; if (o.playing !== undefined) playing = o.playing; if (o.view) view = o.view; if (o.speed) speedF = o.speed; if (o.clock !== undefined) clockOverride = o.clock; ui(); },
     // the order the stations are served in, by station number (for a video); starts the timeline again
     setOrder: nums => { if (!model || !model.ok) return false; const idx = nums.map(n => rows.findIndex(r => String(r.num) === String(n))).filter(i => i >= 0); if (!idx.length) return false; task = null; fresh(); model.order = idx; model.nextIx = 0; return true; },
+    present: on => present(on !== false), presenting: () => presenting,
     runTask, defaultRun, taskPoints: () => taskPts.map(p => ({ id: p.id, name: p.name, text: p.text, group: p.group })),
     call: i => callStation(i), model: () => model, rows: () => rows, now: () => t, task: () => task, ready: () => !!(model && model.ok && (!imgSrc || img)),
     image: (type, q) => cv.toDataURL(type || 'image/png', q)

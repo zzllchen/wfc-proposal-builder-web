@@ -71,24 +71,29 @@
     <div id="stage"><div id="stageSlide" class="slidewrap"><div class="scaler" style="width:1920px;height:1080px"></div></div></div>
     <div id="scroll" hidden></div>
     <div id="editor" hidden></div>
-    <section id="sim" hidden>
-      <div id="simStage"><canvas id="simCv" width="1920" height="1080"></canvas></div>
+    <section id="sim" hidden aria-label="Simulation">
+      <div id="simStage"><canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout, with live readings"></canvas></div>
       <div id="simMsg" hidden></div>
+      <p id="simHint" class="simhint">Turn your phone sideways for a bigger picture.</p>
       <div class="taskbar" id="taskBar" hidden>
+        <span class="tasklbl">Send the AMR</span>
         <div class="pick"><span>From</span><select id="taskFrom" aria-label="From point"></select></div>
         <button id="taskSwap" class="iconbtn" title="Swap the two points" aria-label="Swap the two points"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4L3 8l4 4"/><path d="M3 8h14"/><path d="M17 20l4-4-4-4"/><path d="M21 16H7"/></svg></button>
         <div class="pick"><span>To</span><select id="taskTo" aria-label="To point"></select></div>
         <button id="taskRun" class="btn primary">Run task</button>
         <button id="taskDefault" class="btn ghost" title="Go back to the longest route, trip after trip" hidden>Back to the longest route</button>
       </div>
-      <div class="simbar">
-        <button id="simPlay" class="btn primary">Pause</button>
-        <button id="simRestart" class="btn">Restart</button>
+      <div class="simbar" id="simBar">
+        <div class="simplay">
+          <button id="simPlay" class="btn primary" title="Play or pause (Space)"></button>
+          <button id="simRestart" class="btn" title="Start again"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span class="lbl">Restart</span></button>
+        </div>
         <div id="simSpeed" class="seg" aria-label="Playback speed"><button class="tab" data-v="1">1×</button><button class="tab" data-v="2">2×</button><button class="tab" data-v="4">4×</button><button class="tab" data-v="8">8×</button><button class="tab" data-v="16">16×</button></div>
         <div class="sp"></div>
         <span id="simNote"></span>
         <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
-        <button id="simSave" class="btn">Save video</button>
+        <button id="simSave" class="btn" title="Record one trip to a video file"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><span class="lbl">Save video</span></button>
+        <button id="simFull" class="btn" title="Present full screen (F)"></button>
       </div>
     </section>
     <section id="concept" hidden>
