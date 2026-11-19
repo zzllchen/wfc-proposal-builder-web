@@ -477,14 +477,14 @@ body[data-tab="concept"] #stageBar, body[data-tab="concept"] #stage, body[data-t
 .incl input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--blue); flex: none; }
 #sim.presenting .simtop, #sim.presenting .simsheet, #sim.presenting #obsAdd, #sim.presenting #obsDel { display: none !important; }
 
-/* presentation mode: the simulation alone, full screen; the controls float at the bottom and fade while it plays */
+/* presentation mode: the simulation alone, full screen; the controls are hidden and come up only at the bottom edge, so they never cover the picture */
 #sim.presenting { position: fixed; inset: 0; z-index: 300; margin: 0; padding: 12px; gap: 0; background: #EEF1F7; }
 #sim.presenting #simStage { padding: 0; border-radius: 0; background: transparent; }
 #sim.presenting #simCv { border-radius: 10px; }
 #sim.presenting .taskbar, #sim.presenting #simSave, #sim.presenting #simNote, #sim.presenting .simbar .sp { display: none !important; }
-#sim.presenting .simbar { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 2; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 24px); padding: 8px; border-radius: 18px; background: rgba(255,255,255,.95); border: 1px solid var(--hair); box-shadow: 0 12px 36px rgba(11,18,32,.18); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: opacity .3s, transform .3s; }
-#sim.presenting.idle .simbar { opacity: 0; transform: translate(-50%, 14px); pointer-events: none; }
-#sim.presenting.idle { cursor: none; }
+#sim.presenting .simbar { position: absolute; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translate(-50%, 14px); opacity: 0; pointer-events: none; z-index: 2; flex-wrap: wrap; justify-content: center; width: max-content; max-width: calc(100% - 24px); padding: 8px; border-radius: 18px; background: rgba(255,255,255,.95); border: 1px solid var(--hair); box-shadow: 0 12px 36px rgba(11,18,32,.18); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: opacity .3s, transform .3s; }
+#sim.presenting.showbar .simbar, #sim.presenting .simbar:has(:focus-visible) { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }   /* hidden until the pointer goes to the bottom edge, a tap, or Tab */
+#sim.presenting.still:not(.showbar) { cursor: none; }
 body.sim-presenting { overflow: hidden; }
 #simMsg, #cvEmpty { flex: 1; display: flex; align-items: center; justify-content: center; background: #EBEFF6; border-radius: var(--r-lg); padding: 20px; }
 #simMsg .simbox, #cvEmpty .simbox { background: var(--surface); border-radius: var(--r-xl); padding: 28px 32px; max-width: 520px; display: flex; flex-direction: column; gap: 8px; box-shadow: var(--shadow-md); }

@@ -608,7 +608,7 @@
     full: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5"/><path d="M20 9V4h-5"/><path d="M4 15v5h5"/><path d="M20 15v5h-5"/></svg>',
     exit: '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4"/><path d="M15 4v5h5"/><path d="M9 20v-5H4"/><path d="M15 20v-5h5"/></svg>'
   };
-  let presenting = false, idleT = 0;
+  let presenting = false, idleT = 0, stillT = 0;
   const simEl = () => $('#sim');
   function present(on) {
     const el = simEl(); if (!el || presenting === on) return;
@@ -616,12 +616,31 @@
     if (on) {
       if (el.requestFullscreen && document.fullscreenEnabled && !document.fullscreenElement) el.requestFullscreen({ navigationUI: 'hide' }).then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* phones only */ } }).catch(() => {});
     } else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    wake(); ui();
+    if (on) showBar(2800); else { clearTimeout(idleT); clearTimeout(stillT); el.classList.remove('showbar', 'still'); }
+    ui();
   }
-  // in presentation mode the controls fade away while the picture plays, and come back on any movement or tap
-  function wake() {
-    const el = simEl(); if (!el) return; el.classList.remove('idle'); clearTimeout(idleT);
-    if (presenting) idleT = setTimeout(() => { if (presenting && playing && !el.querySelector('.simbar:hover')) el.classList.add('idle'); }, 2800);
+  // in presentation mode the controls are OUT OF THE WAY (they used to float over the picture and hid words at the bottom): they show for a moment when it starts,
+  // then only when the pointer goes to the bottom edge or onto the bar (a tap on a touch screen, or Tab, brings them back); Space, F and Esc work all the time
+  function showBar(ms) {
+    const el = simEl(); if (!el) return; el.classList.add('showbar'); clearTimeout(idleT);
+    if (ms) idleT = setTimeout(hideBar, ms);
+  }
+  function hideBar() {
+    const el = simEl(); if (!el || !el.classList.contains('showbar')) return;
+    if (el.querySelector('.simbar:hover, .simbar :focus-visible')) { idleT = setTimeout(hideBar, 700); return; }   // still using it: look again shortly
+    el.classList.remove('showbar');
+  }
+  function wake(e) {
+    const el = simEl(); if (!el || !presenting) return;
+    if (e && e.type === 'pointerdown' && e.pointerType && e.pointerType !== 'mouse') {   // touch or pen: a tap on the picture shows or hides the bar, a tap on the bar keeps it
+      if (e.target.closest && e.target.closest('.simbar')) showBar(4000); else if (el.classList.contains('showbar')) { clearTimeout(idleT); hideBar(); } else showBar(4000);
+      return;
+    }
+    if (e && e.type === 'mousemove') {
+      el.classList.remove('still'); clearTimeout(stillT); stillT = setTimeout(() => el.classList.add('still'), 2800);   // the pointer rests: hide it too
+      const r = el.getBoundingClientRect();
+      if (e.clientY > r.bottom - 96 || (e.target.closest && e.target.closest('.simbar'))) showBar(); else if (el.classList.contains('showbar')) { clearTimeout(idleT); idleT = setTimeout(hideBar, 500); }
+    }
   }
   const typing = e => { const t = e.target; return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); };
   function onKey(e) {
@@ -630,7 +649,7 @@
     else if (e.key === 'Escape' && presenting) { present(false); e.preventDefault(); }
     else if (e.key === 'Escape' && placing) { placing = false; ui(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && selObs && mode === 'shift') { removeObstacle(selObs); ui(); e.preventDefault(); }
-    else if (e.key === ' ' && (e.target === document.body || e.target === cv || presenting)) { $('#simPlay').click(); wake(); e.preventDefault(); }
+    else if (e.key === ' ' && (e.target === document.body || e.target === cv || presenting)) { $('#simPlay').click(); if (presenting) showBar(1500); e.preventDefault(); }
   }
 
   /* ---------- the screen ---------- */
@@ -834,7 +853,7 @@
     cv.addEventListener('dblclick', e => { if (mode === 'shift' && obstacleAt(toCanvas(e))) return; present(!presenting); });
     document.addEventListener('keydown', onKey);
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && presenting) present(false); });   // Esc in real full screen
-    ['mousemove', 'pointerdown', 'touchstart'].forEach(ev => simEl().addEventListener(ev, wake, { passive: true }));
+    ['mousemove', 'pointerdown'].forEach(ev => simEl().addEventListener(ev, wake, { passive: true }));
     last = performance.now(); raf = requestAnimationFrame(loop);
   }
   // called by the app whenever the proposal changes while the tab is open (and when the tab opens)
