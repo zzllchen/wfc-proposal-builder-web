@@ -867,3 +867,8 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
   #dTlBar #simSpeed .tab { flex: 1; padding: 0; }
   #dTlBar #simRestart .lbl, #dTlBar #obsAdd span, #dTlBar #simSave .lbl { display: none; }
 }
+
+/* the view's toolbar: every control is the same 34 px tall (the 3D | Plan switch had inherited the 44 px touch height and sat in a big box) */
+.vtools { align-items: center; }
+.vtools .seg { min-height: 0; height: 34px; padding: 3px; gap: 2px; align-items: stretch; border-radius: 12px; }
+.vtools .seg .tab { height: auto; min-height: 0; padding: 0 12px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; }
