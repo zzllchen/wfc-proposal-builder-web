@@ -6,7 +6,7 @@
    It is an event simulation: a whole shift, day, week or month is worked out at once (no waiting for an animation), and with record: true it also writes the
    exact timeline the Simulation tab plays (the same WFCSim segments the single-trip view uses), so the picture and the numbers always agree.
 
-   WFCOps.settings(S)                 -> the settings in use: defaults (facts and assumptions) with the proposal's own changes (S.sim) on top
+   WFCOps.settings(S, D)              -> the settings in use: defaults (facts and assumptions) with the proposal's own changes (S.sim) on top; AMRs follows D.qty until changed
    WFCOps.run(model, o)               -> { ok, H, lines, pallets, amrs, doors, obstacles, stats, series }
         o: { settings, lines: [{ ri, id, name }], doors: [{ id, x, y }] (plan fractions), charger: { x, y } | null, obstacles: [{ id, x, y, since, until }],
              hours, windows: [[t0, t1]...] (production, seconds), loadFrac, batteryKwh, record }
@@ -45,8 +45,10 @@
     chargerEff: 90, kwhPrice: 0.45, doorOpenS: 10, doorCloseS: 8, doorHoldS: 5, doorStopM: 1, obstacleClearS: 30, safetyM: 1,
     callDelayS: 0, intervalMin: 30, lines: {}, obstacles: []
   };
-  function settings(S) {
+  // D (optional): until the AMR count is changed in the Simulation tab, it follows the number of AMRs the proposal states, so the fleet slide and the simulation agree
+  function settings(S, D) {
     const o = Object.assign({}, DEFAULTS, (S && S.sim) || {});
+    if (!(S && S.sim && S.sim.amrs > 0) && D && D.qty > 0) o.amrs = Math.min(10, Math.round(D.qty));
     o.lines = Object.assign({}, (S && S.sim && S.sim.lines) || {}); o.obstacles = ((S && S.sim && S.sim.obstacles) || []).slice();
     return o;
   }
@@ -357,7 +359,7 @@
   function runFor(S, D, opt) {
     opt = opt || {};
     const model = opt.model || modelFor(S, D); if (!model.ok) return { ok: false, reason: model.reason, model };
-    const cfg = Object.assign(settings(S), opt.settings || {}), inp = inputsFor(S, D, model, cfg);
+    const cfg = Object.assign(settings(S, D), opt.settings || {}), inp = inputsFor(S, D, model, cfg);
     const hours = opt.hours ? Math.min(opt.hours, inp.sc.hours) : inp.sc.hours, H = hours * 3600;
     const windows = inp.sc.windows.map(w => [w[0], Math.min(w[1], H)]).filter(w => w[1] > w[0]);
     const obstacles = (opt.obstacles || cfg.obstacles || []);
@@ -368,7 +370,7 @@
   let sumKey = '', sumVal = null;
   function summary(S, D) {
     if (!S || !S.layoutPlan || !(S.layoutPlan.routes || []).length) return null;
-    const key = JSON.stringify([S.layoutPlan.routes, S.layoutPlan.points, D && D.layoutAspect, S.route, D && D.model && D.model.id, S.sim, S.scenario, S.pallet && S.pallet.kg]);
+    const key = JSON.stringify([S.layoutPlan.routes, S.layoutPlan.points, D && D.layoutAspect, S.route, D && D.model && D.model.id, D && D.qty, S.sim, S.scenario, S.pallet && S.pallet.kg]);
     if (key === sumKey) return sumVal;
     sumKey = key; try { const r = runFor(S, D); sumVal = r.ok ? r : null; } catch (e) { sumVal = null; }
     return sumVal;

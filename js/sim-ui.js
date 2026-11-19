@@ -315,7 +315,7 @@
     const sig = JSON.stringify([rebuild.sig, S.sim || null, S.scenario, S.pallet && S.pallet.kg, obsSince]);
     if (!force && sig === opsSig && ops) return;
     opsSig = sig; opsModel = opsModel && opsModel.sig === rebuild.sig ? opsModel : Object.assign(OPS.modelFor(S, D), { sig: rebuild.sig });
-    const cfg = OPS.settings(S), sc = OPS.scenario(S, cfg);
+    const cfg = OPS.settings(S, D), sc = OPS.scenario(S, cfg);
     ops = OPS.runFor(S, D, { model: opsModel, record: true, hours: Math.min(sc.hours, 24), obstacles: obstacleList() });
     opsAll = sc.hours > 24 || Object.keys(obsSince).length ? OPS.runFor(S, D, { model: opsModel }) : ops;   // the results: the whole scenario, obstacles there from the start
     if (!ops.ok) { ops = opsAll = null; return; }
@@ -672,7 +672,7 @@
     $('#simSave').disabled = !ok || !!recState;
     const tb = $('#taskBar'); if (tb) { tb.hidden = shift || !ok || taskPts.length < 2; if (ok && !shift) { fillTaskBar(); $('#taskDefault').hidden = !task; syncRun(); } }
     if (shift && ok && OPS) {
-      const cfg = OPS.settings(S), sc = $('#simScen'), hrs = $('#simHours');
+      const cfg = OPS.settings(S, D), sc = $('#simScen'), hrs = $('#simHours');
       if (sc && document.activeElement !== sc) sc.value = cfg.scenario;
       if (hrs) { hrs.hidden = cfg.scenario !== 'custom'; if (document.activeElement !== hrs) hrs.value = cfg.customH; }
       $('#simAmrsN').textContent = cfg.amrs;
@@ -722,7 +722,7 @@
   const sel = (k, v, opts, label) => `<select data-k="${k}" aria-label="${esc(label)}">${opts.map(([val, lab]) => `<option value="${val}"${String(v) === val ? ' selected' : ''}>${esc(lab)}</option>`).join('')}</select>`;
   function settingsHtml() {
     if (!ops) return '<p class="snote">Draw the routes on the Site layout first.</p>';
-    const cfg = OPS.settings(S), inp = ops.inputs, bat = inp.bat, M = D && D.model;
+    const cfg = OPS.settings(S, D), inp = ops.inputs, bat = inp.bat, M = D && D.model;
     const batPh = bat.from === 'product' ? `${bat.kwh} from the AMR data (${bat.text})` : 'not known: type it in';
     let h = `<div class="snote hi"><b>Simulated estimate based on the settings shown.</b> ${srcTag('fact')} comes from WFC, ${srcTag('product')} from the AMR's data, ${srcTag('proposal')} from this proposal, and ${srcTag('assumption')} is our estimate: change it to match the site.</div>`;
     h += `<h4>From the proposal ${srcTag('proposal')}</h4><ul class="plist"><li>Lines run <b>${inp.sc.shifts} × ${inp.sc.hps} h</b> a day (Operation and pallet)</li><li>Speed <b>${fmt(S.route.speedMps, 2)} m/s</b>, longest route <b>${fmt(S.route.distanceM)} m</b> (Site and route)</li><li>Pallet <b>${inp.kg > 0 ? fmt(inp.kg) + ' kg' : 'weight not given'}</b>${inp.pay > 0 ? ` of ${fmt(inp.pay)} kg payload: ${fmt(inp.loadFrac * 100)}% load` : ''}</li><li>${inp.doors.length} ${inp.doors.length === 1 ? 'door' : 'doors'} drawn on the layout${inp.charger ? ', a charger' : ''}</li></ul>`;
@@ -785,7 +785,7 @@
   }
   function openSheet(which) { sheetOpen = sheetOpen === which ? '' : which; renderSheet(); ui(); }
   function onSheetChange(e) {
-    const el = e.target, cfg = OPS.settings(S);
+    const el = e.target, cfg = OPS.settings(S, D);
     if (el.dataset.slide !== undefined) { S.slides.off.simresults = !el.checked; if (root.WFCApp) root.WFCApp.changed(); return; }
     if (el.dataset.line) {
       const lines = Object.assign({}, cfg.lines), c = Object.assign({}, lines[el.dataset.line] || {}), k = el.dataset.lk;
@@ -813,7 +813,7 @@
     $('#simMode').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b || recState || b.dataset.m === mode) return; speedOf[mode] = speedF; mode = b.dataset.m; speedF = speedOf[mode]; placing = false; selObs = null; statKey = ''; t = 0; playing = true; if (mode === 'trip') { task = null; fresh(); } else { obsSince = {}; rebuildOps(true); } ui(); });
     $('#simScen').addEventListener('change', e => { setSim('scenario', e.target.value); t = 0; });
     $('#simHours').addEventListener('change', e => { const v = parseFloat(e.target.value); if (v > 0) { setSim('customH', Math.min(v, 8760)); t = 0; } });
-    $('#simAmrs').addEventListener('click', e => { const b = e.target.closest('[data-d]'); if (!b) return; const n = Math.max(1, Math.min(10, OPS.settings(S).amrs + +b.dataset.d)); setSim('amrs', n); });
+    $('#simAmrs').addEventListener('click', e => { const b = e.target.closest('[data-d]'); if (!b) return; const n = Math.max(1, Math.min(10, OPS.settings(S, D).amrs + +b.dataset.d)); setSim('amrs', n); });
     $('#simCharge').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setSim('charge', b.dataset.v); });
     $('#obsAdd').addEventListener('click', () => { placing = !placing; selObs = null; ui(); });
     $('#obsDel').addEventListener('click', () => { if (selObs) removeObstacle(selObs); ui(); });
@@ -823,7 +823,7 @@
     sh.addEventListener('change', onSheetChange);
     sh.addEventListener('click', e => {
       const u = e.target.closest('[data-unit]'); if (u) { unit = u.dataset.unit; renderSheet(); return; }
-      if (e.target.closest('[data-reset]')) { S.sim = { obstacles: obsList(), scenario: OPS.settings(S).scenario }; if (root.WFCApp) root.WFCApp.changed(); setTimeout(renderSheet, 60); }
+      if (e.target.closest('[data-reset]')) { S.sim = { obstacles: obsList(), scenario: OPS.settings(S, D).scenario }; if (root.WFCApp) root.WFCApp.changed(); setTimeout(renderSheet, 60); }
     });
     // the picture: click a station (one trip), seek on the timeline, put down, pick, drag or remove obstacles (shift)
     let down = null;
