@@ -423,7 +423,10 @@
   function drawHudOps(tt, sts) {
     const a0 = ops.amrs[0], s = sts[0], bat = OPS.valueAt(a0.batPts, tt, true), Hn = ops.H;
     // the clock and the battery
-    txt(clock(tt), HX + 36, 266, 60, 700, INK); fitTxt(`of ${clock(Hn)}${ops.scenarioHours > 24 ? '  ·  day 1 shown' : ''}`, HX + 36, 300, HW - 72, 20, 500, MUTE);
+    // the big clock stays inside its card: the day goes small on the right ("Day 2"), the time shrinks to fit; a run of whole days ends at 24:00:00, not "Day 2 0:00:00"
+    const whole = h => h > 0 && h % 86400 === 0, cs = whole(Hn) && tt >= Hn - 0.5 ? `${Hn / 3600}:00:00` : clock(tt), dm = /^(Day \d+)\s+(.*)$/.exec(cs);
+    if (dm) { txt(dm[1], HX + HW - 36, 266, 26, 700, BLUE, 'right'); fitTxt(dm[2], HX + 36, 266, HW - 72 - width(dm[1], 26, 700) - 14, 60, 700, INK); } else fitTxt(cs, HX + 36, 266, HW - 72, 60, 700, INK);
+    fitTxt(`of ${whole(Hn) ? Hn / 3600 + ':00:00' : clock(Hn)}${ops.scenarioHours > 24 ? '  ·  day 1 shown' : ''}`, HX + 36, 300, HW - 72, 20, 500, MUTE);
     const chg = s.kind === 'charge' || s.kind === 'swap', bc = bat < 0.2 ? '#D8362F' : bat < 0.5 ? AMBER : '#1E9E5A';
     txt(sts.length > 1 ? 'AMR 1 battery' : 'Battery', HX + 36, 340, 21, 500, MUTE); txt(fmt(bat * 100) + '%', HX + HW - 36, 340, 26, 700, INK, 'right');
     if (chg) fitTxt(s.kind === 'swap' ? 'Swapping' : bat >= 0.995 ? 'Full' : 'Charging', HX + HW - 36 - width(fmt(bat * 100) + '%', 26, 700) - 14, 340, 140, 18, 700, GREEN, 'right');
