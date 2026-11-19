@@ -34,7 +34,7 @@
   const fmt = (v, d) => (Math.round(v * Math.pow(10, d || 0)) / Math.pow(10, d || 0)).toLocaleString('en-US', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
   const mm = s => { s = Math.max(0, Math.round(s)); return s >= 3600 ? Math.floor(s / 3600) + ':' + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0') : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   const KIND = { out: LIGHT, load: SLATE, pivot: AMBER, drive: BLUE, unload: SLATE, go: LIGHT, wait: AMBER, charge: GREEN, swap: GREEN, idle: '#9AA6BC' };
-  const tagOf = r => (/(\d+)\s*$/.exec(r.name || '') || [])[1] || String(r.num);   // the number shown on a station: the line's own number when its name ends in one
+  const tagOf = r => (/(\d+)\s*$/.exec(r.name || '') || [])[1] || (r.num !== undefined && r.num !== null && r.num !== '' ? String(r.num) : '•');   // the number shown on a station: the line's own number when its name ends in one
   const toScreen = (x, y, z) => cam.P(x, y, z || 0);
   const planToWorld = p => [p.x * model.k, p.y / model.aspect * model.k];
 
@@ -84,21 +84,22 @@
     const A = at(a), B = at(b), pts = [[A[0], A[1]]]; for (let i = A[2]; i < B[2] && i < P.length; i++) pts.push([P[i].x, P[i].y]); pts.push([B[0], B[1]]);
     return pts.map(p => cam.P(p[0], p[1], 0));
   }
-  function drawRoutesBase() {
-    model.routes.forEach((R, i) => { const all = partPath(R.P, R.cum, 0, R.distanceM), far = i === model.far; stroke(all, far ? 13 : 11, 'rgba(255,255,255,.85)'); stroke(all, far ? 5 : 4, far ? 'rgba(227,162,26,.9)' : 'rgba(47,91,208,.4)', [2, 11]); });
+  function drawRoutesBase(m) {
+    m = m || model; m.routes.forEach((R, i) => { const all = partPath(R.P, R.cum, 0, R.distanceM), far = i === m.far; stroke(all, far ? 13 : 11, 'rgba(255,255,255,.85)'); stroke(all, far ? 5 : 4, far ? 'rgba(227,162,26,.9)' : 'rgba(47,91,208,.4)', [2, 11]); });
   }
-  function drawStations() {
+  function drawStations(dots) {
     const P = cam.P;
+    dots = dots || rows.map((r, i) => { const R = model.routes[i]; return { x: R.P[0].x, y: R.P[0].y, tag: tagOf(r), far: i === model.far }; });
     ((S.layoutPlan || {}).points || []).forEach(p => {
       const w = planToWorld(p), [x, y] = P(w[0], w[1], 0);
       if (p.kind === 'spot') { ctx.save(); ctx.fillStyle = SLATE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; rr(ctx, x - 11, y - (cam.iso ? 7 : 11), 22, cam.iso ? 14 : 22, 4); ctx.fill(); ctx.stroke(); ctx.restore(); if (p.label) txt(String(p.label).slice(0, 2), x, y + (cam.iso ? 4 : 5), 12, 700, '#fff', 'center'); }
       else if (p.kind === 'door') { ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 9, cam.iso ? 6 : 9, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
     });
-    rows.forEach((r, i) => {   // pick-up stations: numbered dots; the farthest has an amber ring
-      const R = model.routes[i], [x, y] = P(R.P[0].x, R.P[0].y, 0), far = i === model.far;
+    dots.forEach(r => {   // pick-up stations: numbered dots; the farthest has an amber ring
+      const [x, y] = P(r.x, r.y, 0), far = r.far;
       ctx.save(); if (far) { ctx.strokeStyle = AMBER; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, y, 19, cam.iso ? 12 : 19, 0, 0, 7); ctx.stroke(); }
       ctx.fillStyle = BLUE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 14, cam.iso ? 9.5 : 14, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
-      txt(tagOf(r), x, y + (cam.iso ? 4.5 : 5.5), 14, 700, '#fff', 'center');
+      txt(r.tag, x, y + (cam.iso ? 4.5 : 5.5), 14, 700, '#fff', 'center');
     });
   }
 
@@ -320,7 +321,7 @@
     if (!ops.ok) { ops = opsAll = null; return; }
     // time spent per kind of activity, added up along each AMR's timeline (for the live percentages and the timeline bar)
     ops.amrs.forEach(a => { const c = { work: 0, wait: 0, charge: 0, idle: 0 }; a.cum = a.model.segs.map(g => { c[CAT[g.kind] || 'work'] += g.t1 - g.t0; return Object.assign({ t1: g.t1, cat: CAT[g.kind] || 'work' }, c); }); });
-    ops.lines.forEach(L => { const R = opsModel.routes[L.ri]; L.pick = R.P[0]; L.hd = R.rev.h1; L.dir = Math.atan2(R.P[1].y - R.P[0].y, R.P[1].x - R.P[0].x); L.tag = tagOf({ name: L.name, num: L.num }); });
+    ops.lines.forEach(L => { const R = opsModel.routes[L.ri]; L.pick = R.P[0]; L.hd = R.rev.h1; L.dir = Math.atan2(R.P[1].y - R.P[0].y, R.P[1].x - R.P[0].x); L.tag = tagOf({ name: L.name, num: L.num || String(L.li + 1) }); });
     // a door faces across the route that goes through it
     ops.doors.forEach(d => { let best = null; opsModel.routes.forEach(R => { for (let i = 0; i < R.P.length - 1; i++) { const a = R.P[i], b = R.P[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((d.x - a.x) * dx + (d.y - a.y) * dy) / L2)) : 0, dd = Math.hypot(d.x - a.x - dx * u, d.y - a.y - dy * u); if (!best || dd < best.d) best = { d: dd, ang: Math.atan2(dy, dx) }; } }); d.ang = best ? best.ang : 0; });
     ops.obstacles.forEach(b => { let best = null; opsModel.routes.forEach(R => { for (let i = 0; i < R.P.length - 1; i++) { const a = R.P[i], c = R.P[i + 1], dx = c.x - a.x, dy = c.y - a.y, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((b.x - a.x) * dx + (b.y - a.y) * dy) / L2)) : 0, dd = Math.hypot(b.x - a.x - dx * u, b.y - a.y - dy * u); if (!best || dd < best.d) best = { d: dd, ang: Math.atan2(dy, dx) }; } }); b.ang = best ? best.ang : 0; b.onRoute = !!best && best.d < 1.2; });
@@ -406,7 +407,7 @@
   function drawHudStaticOps() {
     const cl = S.client && S.client.name ? S.client.name : '', mdl = D && D.model ? D.model.name : 'Pallet jack AMR', n = ops.amrs.length, sc = ops.cfg.scenario;
     txt(sc === 'shift' ? `A shift with the AMR${n > 1 ? 's' : ''}` : sc === 'day' ? `A day with the AMR${n > 1 ? 's' : ''}` : `The AMR${n > 1 ? 's' : ''} at work`, 70, 92, 46, 700, INK);
-    fitTxt(`${cl ? cl + '  ·  ' : ''}${ops.lines.filter(L => L.on).length} lines  ·  ${n} × ${mdl}  ·  ${ops.cfg.charge === 'swap' ? 'battery swap' : 'automatic charging'}`, 70, 132, 1300, 24, 500, MUTE);
+    fitTxt(`${cl ? cl + '  ·  ' : ''}${ops.lines.filter(L => L.on).length} line${ops.lines.filter(L => L.on).length === 1 ? '' : 's'}  ·  ${n} × ${mdl}  ·  ${ops.cfg.charge === 'swap' ? 'battery swap' : 'automatic charging'}`, 70, 132, 1300, 24, 500, MUTE);
     card(CU.x, CU.y, CU.w, CU.h); card(HX, 150, HW, 236); card(HX, 404, HW, 92); card(HX, 514, HW, 476);
     txt('SHIFT CLOCK', HX + 36, 196, 20, 700, BLUE); txt('PRODUCTION LINES', HX + 36, 556, 20, 700, BLUE); txt('waiting', HX + HW - 36, 556, 18, 500, MUTE, 'right');
     for (let i = 0; i < 4; i++) card(KX(i), KY, KW, KH);
@@ -473,7 +474,7 @@
       statKey = key; const main = ctx; ctx = stat.getContext('2d'); cam = camera();
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
       const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#FBFCFE'); bg.addColorStop(1, '#E9EEF8'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      drawGround(); drawAreas(); drawRoutesBase(); drawStations(); drawHudStaticOps(); ctx = main;
+      drawGround(); drawAreas(); drawRoutesBase(opsModel); drawStations(ops.lines.map(L => ({ x: L.pick.x, y: L.pick.y, tag: L.tag, far: L.ri === opsModel.far }))); drawHudStaticOps(); ctx = main;
     }
     cam = camera(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stat, 0, 0);
     const sts = ops.amrs.map(a => Sim.at(a.model, tt)), s0 = sts[0], j0 = s0.jobRef, serving = j0 && !j0.service && j0.pallet !== undefined ? ops.pallets.find(p => p.id === j0.pallet).li : -1;
@@ -674,7 +675,7 @@
   const toPlan = w => ({ x: +(w.x / model.k).toFixed(4), y: +(w.y * model.aspect / model.k).toFixed(4) });
   function snapToRoute(w) {
     let best = null;
-    model.routes.forEach(R => { for (let i = 0; i < R.P.length - 1; i++) { const a = R.P[i], b = R.P[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((w.x - a.x) * dx + (w.y - a.y) * dy) / L2)) : 0, x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(w.x - x, w.y - y); if (!best || d < best.d) best = { x, y, d }; } });
+    ((mode === 'shift' && opsModel) || model).routes.forEach(R => { for (let i = 0; i < R.P.length - 1; i++) { const a = R.P[i], b = R.P[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy, u = L2 ? Math.max(0, Math.min(1, ((w.x - a.x) * dx + (w.y - a.y) * dy) / L2)) : 0, x = a.x + dx * u, y = a.y + dy * u, d = Math.hypot(w.x - x, w.y - y); if (!best || d < best.d) best = { x, y, d }; } });
     return best && best.d < 6 ? { x: best.x, y: best.y } : w;
   }
   const obsList = () => (S.sim && S.sim.obstacles) || [];
@@ -707,8 +708,9 @@
     h += `<h4>How it works</h4><div class="frow"><div class="fl"><span>Which pallet next</span></div>${sel('dispatch', cfg.dispatch, [['fifo', 'First come, first served'], ['nearest', 'Nearest line first']], 'Which pallet next')}</div>`;
     h += `<div class="frow"><div class="fl"><span>At an obstacle</span> ${srcTag('assumption')}</div>${sel('obstacleMode', cfg.obstacleMode, [['wait', 'Stop and wait until clear'], ['reroute', 'Go round it']], 'At an obstacle')}</div>`;
     h += `<div class="frow"><div class="fl"><span>The lines start</span> ${srcTag('assumption')}</div>${sel('start', cfg.start, [['staggered', 'Staggered'], ['together', 'All together']], 'The lines start')}</div>`;
-    h += `<h4>Lines ${srcTag('fact')}</h4><p class="snote">Distances are measured on the layout, scaled so the longest route is ${fmt(S.route.distanceM)} m. Metres: one way from the line to the drop-off. Minutes: a finished pallet every so often. Type a value to change one line.</p><div class="ltable" role="table"><div class="lrow lhead" role="row"><span>Line</span><span>Metres</span><span>Minutes</span><span>On</span></div>`;
-    ops.lines.forEach(L => { const c = cfg.lines[L.id] || {}; h += `<div class="lrow" role="row"><span><b class="ltag">${esc(L.tag)}</b>${esc(L.name)}</span><input type="number" inputmode="decimal" step="0.1" min="1" data-line="${esc(L.id)}" data-lk="distanceM" value="${c.distanceM ? esc(c.distanceM) : ''}" placeholder="${fmt(L.geoM, 1)}" aria-label="${esc(L.name)} distance in metres"><input type="number" inputmode="decimal" step="1" min="1" data-line="${esc(L.id)}" data-lk="interval" value="${c.interval ? esc(c.interval) : ''}" placeholder="${fmt(cfg.intervalMin)}" aria-label="${esc(L.name)} minutes between pallets"><label class="tgl"><input type="checkbox" data-line="${esc(L.id)}" data-lk="on" ${c.on === false ? '' : 'checked'}><span class="track" aria-hidden="true"></span><span class="sr">${esc(L.name)} on</span></label></div>`; });
+    h += `<div class="frow"><div class="fl"><span>Pallet timing</span> ${srcTag('assumption')}</div>${sel('timing', cfg.timing, [['varied', 'Random (like a real line)'], ['regular', 'Exactly on time']], 'Pallet timing')}</div>`;
+    h += `<h4>Lines ${srcTag('fact')}</h4><p class="snote">Every pick-up point on the layout is a line${ops.lines.some(L => L.auto) ? '; points marked auto have no route drawn, so the tool found the shortest way along the drawn walkways' : ''}${S.scenario && +S.scenario.stations && +S.scenario.stations !== ops.lines.length ? `. The proposal says ${+S.scenario.stations} stations and the layout has ${ops.lines.length} pick-up points: add the missing points in Edit layout` : ''}. Distances are measured on the layout, scaled so the longest drawn route is ${fmt(S.route.distanceM)} m. Metres: one way from the line to the drop-off. Minutes: a finished pallet every so often. Type a value to change one line.</p><div class="ltable" role="table"><div class="lrow lhead" role="row"><span>Line</span><span>Metres</span><span>Minutes</span><span>On</span></div>`;
+    ops.lines.forEach(L => { const c = cfg.lines[L.id] || {}; h += `<div class="lrow" role="row"><span><b class="ltag">${esc(L.tag)}</b>${esc(L.name)}${L.auto ? ' <em class="src product" title="No route is drawn to this point: the tool found the shortest way along the drawn walkways">auto</em>' : ''}</span><input type="number" inputmode="decimal" step="0.1" min="1" data-line="${esc(L.id)}" data-lk="distanceM" value="${c.distanceM ? esc(c.distanceM) : ''}" placeholder="${fmt(L.geoM, 1)}" aria-label="${esc(L.name)} distance in metres"><input type="number" inputmode="decimal" step="1" min="1" data-line="${esc(L.id)}" data-lk="interval" value="${c.interval ? esc(c.interval) : ''}" placeholder="${fmt(cfg.intervalMin)}" aria-label="${esc(L.name)} minutes between pallets"><label class="tgl"><input type="checkbox" data-line="${esc(L.id)}" data-lk="on" ${c.on === false ? '' : 'checked'}><span class="track" aria-hidden="true"></span><span class="sr">${esc(L.name)} on</span></label></div>`; });
     h += '</div>';
     GROUPS.forEach(([g, title]) => { const fs = OPS.FIELDS.filter(f => f.g === g); if (!fs.length) return; h += `<h4>${title}</h4>` + fs.map(f => fieldRow(f, cfg, f.k === 'batteryKwh' ? batPh : '')).join(''); });
     if (!bat.kwh) h += '<p class="snote alert">The battery capacity is not known for this AMR, so energy and cost are not shown. Type it in above.</p>';

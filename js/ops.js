@@ -40,7 +40,7 @@
     { k: 'intervalMin', g: 'lines', l: 'Each line finishes a pallet every', u: 'min', src: 'fact', step: 1, note: 'editable per line below' }
   ];
   const DEFAULTS = {
-    scenario: 'shift', customH: 12, amrs: 1, charge: 'auto', dispatch: 'fifo', obstacleMode: 'wait', start: 'staggered',
+    scenario: 'shift', customH: 12, amrs: 1, charge: 'auto', dispatch: 'fifo', obstacleMode: 'wait', start: 'staggered', timing: 'varied',
     runEmptyH: 8, runFullH: 6.75, chargeH: 2, swapMin: 7, batteryKwh: '', lowPct: 20, leavePct: 30, idleCharge: true,
     chargerEff: 90, kwhPrice: 0.45, doorOpenS: 10, doorCloseS: 8, doorHoldS: 5, doorStopM: 1, obstacleClearS: 30, safetyM: 1,
     callDelayS: 0, intervalMin: 30, lines: {}, obstacles: []
@@ -108,12 +108,18 @@
     // the lines (one per route) and their pallets
     const lines = (o.lines || model.routes.map((R, ri) => ({ ri, id: R.id, name: R.label }))).map((L, li) => {
       const R = model.routes[L.ri], c = cfg.lines[L.id] || {}, geo = R.distanceM, dist = num(c.distanceM, NaN) > 0 ? num(c.distanceM) : geo;
-      return { li, ri: L.ri, id: L.id, name: L.name, geoM: geo, distM: dist, f: dist / geo, intervalS: Math.max(1, num(c.interval, num(cfg.intervalMin, 30))) * 60, on: c.on !== false, pallets: [] };
+      return { li, ri: L.ri, id: L.id, name: L.name, num: L.num || String(li + 1), auto: !!L.auto, geoM: geo, distM: dist, f: dist / geo, intervalS: Math.max(1, num(c.interval, num(cfg.intervalMin, 30))) * 60, on: c.on !== false, pallets: [] };
     });
+    // real lines do not finish a pallet on the dot: with timing 'varied' each pallet is finished at a random moment within 40% of the interval either side of its slot
+    // (the same number of pallets; a fixed pseudo-random draw per line and slot, so the same proposal always gives the same shift and one line's change moves no other)
+    const varied = cfg.timing !== 'regular', draw = key => { let h = 1779033703 ^ key.length; for (let i = 0; i < key.length; i++) { h = Math.imul(h ^ key.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; } h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); return ((h ^ h >>> 16) >>> 0) / 4294967296; };
     const on = lines.filter(L => L.on), pallets = [];
     (o.windows || [[0, H]]).forEach(([w0, w1]) => on.forEach((L, j) => {
       const off = cfg.start === 'together' ? L.intervalS : L.intervalS * (j + 1) / on.length;
-      for (let t = w0 + off; t <= w1 + 1e-6 && t <= H; t += L.intervalS) { const p = { id: pallets.length, li: L.li, tFinish: t, tCall: t + callDelay, tAssign: null, tLoad: null, tDrop: null, amr: null }; pallets.push(p); L.pallets.push(p); }
+      for (let t = w0 + off, k = 0; t <= w1 + 1e-6 && t <= H; t += L.intervalS, k++) {
+        const tf = varied ? clamp(t + (draw(L.id + '|' + w0 + '|' + k) - 0.5) * 0.8 * L.intervalS, w0 + 1, Math.min(w1, H)) : t;
+        const p = { id: pallets.length, li: L.li, tFinish: tf, tCall: tf + callDelay, tAssign: null, tLoad: null, tDrop: null, amr: null }; pallets.push(p); L.pallets.push(p);
+      }
     }));
     pallets.sort((a, b) => a.tCall - b.tCall || a.li - b.li);
 
@@ -322,19 +328,29 @@
   // a route's label is "Point 3 (Channel 4)" or "Longest route · Point 8 (Channel 8)": the number on the map and the line's name
   const parseLabel = (label, i) => { const m = /^(?:Longest route\s*[·-]\s*)?Point\s+(\S+)(?:\s*\((.*)\))?\s*$/.exec(label || ''); return m ? { num: m[1], name: m[2] || 'Point ' + m[1] } : { num: String(i + 1), name: (label || 'Route ' + (i + 1)).replace(/^Longest route\s*[·-]\s*/, '') }; };
   function modelFor(S, D) {
-    const lp = (S && S.layoutPlan) || {}, routes = (lp.routes || []).filter(r => (r.pts || []).length > 1), aspect = (D && D.layoutAspect) || 1.5, M = D && D.model;
-    const spots = (lp.points || []).filter(p => p.kind === 'spot');
-    const dropName = r => { const e = r.pts[r.pts.length - 1]; let best = null, bd = 1e9; spots.forEach(p => { const dd = Math.hypot(p.x - e.x, (p.y - e.y) / aspect); if (dd < bd) { bd = dd; best = p; } }); return best && bd < 0.05 ? 'Spot ' + best.label : 'the drop-off'; };
+    const lp = (S && S.layoutPlan) || {}, drawn = (lp.routes || []).filter(r => (r.pts || []).length > 1), aspect = (D && D.layoutAspect) || 1.5, M = D && D.model;
+    const spots = (lp.points || []).filter(p => p.kind === 'spot'), pts = (lp.points || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.id !== undefined);
+    const dist = (a, b) => Math.hypot(a.x - b.x, (a.y - b.y) / aspect), plen = r => r.pts.reduce((s, p, i) => i ? s + dist(p, r.pts[i - 1]) : 0, 0);
+    const dropName = r => { const e = r.pts[r.pts.length - 1]; let best = null, bd = 1e9; spots.forEach(p => { const dd = dist(p, e); if (dd < bd) { bd = dd; best = p; } }); return best && bd < 0.05 ? 'Spot ' + best.label : 'the drop-off'; };
+    const net = root.WFCNet ? root.WFCNet.build({ routes: drawn, points: pts, aspect }) : null;
+    const picks = pts.filter(p => p.kind === 'pick'), longest = drawn.length ? drawn.reduce((a, b) => plen(b) > plen(a) ? b : a) : null;
+    const pickAt = r => picks.find(p => dist(p, r.pts[0]) < 0.02);
+    // the drawn routes; one whose label does not name its point ("Longest route") takes the name of the pick-up point it starts at
+    const routes = drawn.map(r => { const p = pickAt(r); return /Point\s/.test(r.label || '') || !p ? r : Object.assign({}, r, { label: 'Point ' + p.label }); });
+    // every other pick-up point: the shortest way along the drawn walkways to where the longest route ends (worked out, so marked auto)
+    if (net && longest) picks.forEach(p => {
+      if (drawn.some(r => dist(r.pts[0], p) < 0.02)) return;
+      const way = net.path(p, longest.pts[longest.pts.length - 1]);
+      if (way && way.pts.length > 1 && way.len > 0.004) routes.push({ id: 'auto-' + p.id, label: 'Point ' + p.label, pts: way.pts, auto: true });
+    });
     const named = routes.map((r, i) => Object.assign({}, r, { fromName: parseLabel(r.label, i).name, toName: dropName(r) }));
-    const pts = (lp.points || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y) && p.id !== undefined);
-    const net = root.WFCNet ? root.WFCNet.build({ routes, points: pts, aspect }) : null;
-    return Sim.build({ routes: named, aspect, distanceM: S.route.distanceM, speedMps: S.route.speedMps, bufferPct: S.route.bufferPct, dwellS: S.route.dwellS, net, turnM: M && M.turnM, liftMm: M && M.liftMm });
+    return Sim.build({ routes: named, aspect, distanceM: S.route.distanceM, speedMps: S.route.speedMps, bufferPct: S.route.bufferPct, dwellS: S.route.dwellS, net, turnM: M && M.turnM, liftMm: M && M.liftMm, scaleLen: longest ? plen(longest) : 0 });
   }
   function inputsFor(S, D, model, cfg) {
     const lp = (S && S.layoutPlan) || {}, M = D && D.model, sc = scenario(S, cfg), bat = batteryKwh(cfg, M);
     const kg = num(S.pallet && S.pallet.kg, NaN) > 0 ? num(S.pallet.kg) : num(S.scenario && S.scenario.loadKg, NaN), pay = num(M && M.payloadKg, NaN);
     const loadFrac = kg > 0 && pay > 0 ? clamp(kg / pay, 0, 1) : 1;   // not known: count every trip as a full load (the safe side)
-    const lines = model.routes.map((R, ri) => { const p = parseLabel(R.label, ri); return { ri, id: R.id, name: p.name, num: p.num }; });
+    const lines = model.routes.map((R, ri) => { const p = parseLabel(R.label, ri); return { ri, id: R.id, name: p.name, num: p.num, auto: !!R.auto }; });
     const doors = (lp.points || []).filter(p => p.kind === 'door'), ch = (lp.points || []).find(p => p.kind === 'charger') || null;
     return { sc, bat, loadFrac, kg, pay, lines, doors, charger: ch };
   }

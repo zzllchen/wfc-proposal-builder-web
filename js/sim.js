@@ -76,13 +76,13 @@
   /* ---------- build ---------- */
   function build(o) {
     const asp = num(o.aspect, 1) || 1, d = num(o.distanceM), v = num(o.speedMps);
-    let src = (o.routes || []).map((r, i) => ({ id: r.id !== undefined ? String(r.id) : 'r' + (i + 1), label: r.label || 'Route ' + (i + 1), fromName: r.fromName, toName: r.toName, pts: (r.pts || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)) })).filter(r => r.pts.length > 1);
+    let src = (o.routes || []).map((r, i) => ({ id: r.id !== undefined ? String(r.id) : 'r' + (i + 1), label: r.label || 'Route ' + (i + 1), fromName: r.fromName, toName: r.toName, auto: !!r.auto, pts: (r.pts || []).filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)) })).filter(r => r.pts.length > 1);
     if (!src.length && o.pts) src = [{ id: 'r1', label: 'Route', pts: o.pts.filter(p => p && Number.isFinite(p.x) && Number.isFinite(p.y)) }].filter(r => r.pts.length > 1);
     if (!src.length) return { ok: false, reason: 'Draw the route on the Site layout first (Edit layout).' };
     if (!(d > 0) || !(v > 0)) return { ok: false, reason: 'Enter the route distance and the speed first.' };
     const lens = src.map(r => plen(r.pts, asp)), Lmax = Math.max(...lens);
     if (!(Lmax > 0)) return { ok: false, reason: 'The route has no length. Draw it again on the Site layout.' };
-    const k = d / Lmax;                                                                   // metres per plan unit, so the longest drawn route measures the stated distance
+    const k = d / (o.scaleLen > 0 ? o.scaleLen : Lmax);                                   // metres per plan unit, so the longest drawn route measures the stated distance
     const buf = Math.max(num(o.bufferPct), 0), dwellS = Math.max(num(o.dwellS), 0), phys = Object.assign({}, PHYS, o.physics || {});
     const turnM = num(o.turnM, 1.4) || 1.4, liftMm = num(o.liftMm, 205) || 205;
     const m = { ok: true, k, aspect: asp, speedMps: v, phys, turnM, liftMm, cornerMps: Math.min(v, Math.sqrt(phys.latAccel * turnM)), bufferPct: buf, dwellS, segs: [], jobs: [], endT: 0, nextIx: 0, endHd: null, mode: 'loop', net: o.net || null };
@@ -92,14 +92,16 @@
       const P = r.pts.map(p => ({ x: p.x * k, y: p.y / asp * k })), n = P.length, len = [], cum = [0];
       for (let i = 1; i < n; i++) { len.push(Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y)); cum.push(cum[i - 1] + len[i - 1]); }
       const dir = i => Math.atan2(P[i + 1].y - P[i].y, P[i + 1].x - P[i].x), dm = cum[n - 1], theoS = 2 * dm / v, bufS = theoS * buf / 100;
-      const R = { id: r.id, label: r.label, fromName: r.fromName, toName: r.toName, P, n, len, cum, dir, distanceM: dm, theoS, bufS, cycleS: theoS + bufS + dwellS };   // cycleS: the proposal's formula
+      const R = { id: r.id, label: r.label, fromName: r.fromName, toName: r.toName, auto: r.auto, P, n, len, cum, dir, distanceM: dm, theoS, bufS, cycleS: theoS + bufS + dwellS };   // cycleS: the proposal's formula
       R.rev = makeLeg(m, P.slice().reverse(), true); R.fwd = makeLeg(m, P, true);
       // the time one trip really takes (in a row of trips: it turns round at the drop-off, drives out, loads, turns, carries back, unloads)
       R.driveS = R.rev.time + R.fwd.time;
       R.simS = R.rev.time + R.fwd.time + m.loadS + m.unloadS + 2 * Math.abs(Math.PI) / m.pivotRadS;
       return R;
     });
-    const far = m.routes.reduce((a, b, i) => b.distanceM > m.routes[a].distanceM + 1e-9 ? i : a, 0);
+    // the farthest line: among the DRAWN routes when there are any (a worked-out line has no drawn route, so it never takes the title from the one the user drew as the longest)
+    const pool = m.routes.map((r, i) => i).filter(i => !m.routes[i].auto), ids = pool.length ? pool : m.routes.map((r, i) => i);
+    const far = ids.reduce((a, i) => m.routes[i].distanceM > m.routes[a].distanceM + 1e-9 ? i : a, ids[0]);
     m.far = far; m.distanceM = m.routes[far].distanceM; m.theoS = m.routes[far].theoS; m.bufS = m.routes[far].bufS; m.cycleS = m.routes[far].cycleS; m.simCycleS = m.routes[far].simS;
     m.order = (o.order && o.order.length ? o.order : [far]).filter(i => m.routes[i]);   // the longest route is the default simulation
     const R0 = m.routes[far]; m.park = { x: R0.P[R0.n - 1].x, y: R0.P[R0.n - 1].y }; m.endPos = { x: m.park.x, y: m.park.y };

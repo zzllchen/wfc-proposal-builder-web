@@ -448,13 +448,17 @@
     }
 
     /* ---- Fleet size (new visual) ---- */
+    // the shift simulation (Simulation tab) for this proposal; the fleet slide uses it when the proposal states its own number of AMRs (the override)
+    const SR = root.WFCOps && root.WFCOps.summary ? root.WFCOps.summary(S, D) : null, simOk = !!(SR && SR.ok && SR.stats.made > 0);
+    const simKeeps = simOk && SR.stats.waitingAtEnd <= Math.max(2, SR.lines.filter(L => L.on).length), simBusy = simOk ? Math.round((SR.stats.pct.working + SR.stats.pct.waiting) * 100) : 0;
+    const ovr = !!(D.override && chosen && D.override !== chosen.amrs);   // the proposal says a different number from the worst-case formula
     if (F && F.ok && chosen) {
       const cap = chosen.amrs * chosen.availH * F.maxUtil;
       const maxScale = Math.max(F.workH, cap, 0.1) * 1.08;
       const bar = (label, val, color, txt) => `<div class="col gap8"><div class="row" style="justify-content:space-between"><p class="t24 b">${label}</p><p class="t24 b">${txt}</p></div><div style="height:48px;border-radius:12px;background:#E3EAF8"><div style="height:48px;border-radius:12px;background:${color};width:${Math.max(val / maxScale * 100, 1.5).toFixed(1)}%"></div></div></div>`;
-      const util = Math.min(chosen.utilOfAvail, 1);
+      const util = ovr && simOk ? Math.min(simBusy / 100, 1) : Math.min(chosen.utilOfAvail, 1);
       const R = 70, Cc = 2 * Math.PI * R;
-      const ring = `<svg viewBox="0 0 180 180" width="180" height="180"><circle cx="90" cy="90" r="${R}" fill="none" stroke="#26324A" stroke-width="20"/><circle cx="90" cy="90" r="${R}" fill="none" stroke="#8FB0F5" stroke-width="20" stroke-linecap="round" stroke-dasharray="${(Cc * util).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 90 90)"/><text x="90" y="88" font-size="40" font-weight="700" text-anchor="middle" fill="#fff" font-family="DM Sans, Arial">${Math.round(chosen.utilOfAvail * 100)}%</text><text x="90" y="114" font-size="18" text-anchor="middle" fill="#B9C6E0" font-family="DM Sans, Arial">busy</text></svg>`;
+      const ring = `<svg viewBox="0 0 180 180" width="180" height="180"><circle cx="90" cy="90" r="${R}" fill="none" stroke="#26324A" stroke-width="20"/><circle cx="90" cy="90" r="${R}" fill="none" stroke="#8FB0F5" stroke-width="20" stroke-linecap="round" stroke-dasharray="${(Cc * util).toFixed(1)} ${Cc.toFixed(1)}" transform="rotate(-90 90 90)"/><text x="90" y="88" font-size="40" font-weight="700" text-anchor="middle" fill="#fff" font-family="DM Sans, Arial">${Math.round(util * 100)}%</text><text x="90" y="114" font-size="18" text-anchor="middle" fill="#B9C6E0" font-family="DM Sans, Arial">${ovr && simOk ? 'busy, simulated' : 'busy'}</text></svg>`;
       const step = (k, v) => `<div class="row" style="gap:24px;border-top:1px solid var(--line);padding-top:12px"><p class="t24 lbl" style="width:290px;flex:none">${k}</p><p class="t24 grow">${v}</p></div>`;
       const availTxt = strat === 'swap'
         ? `${n1(chosen.availH)} h of ${F.opHours} h (spare battery swapped by hand, about ${F.swapMin} min each)`
@@ -463,12 +467,14 @@
         ${head('Solution', 'AMR fleet size')}
         <div class="row" style="align-items:stretch">
           <div class="card dark col" style="width:500px;justify-content:space-between;gap:12px">
-            <p class="t24 ondark">Recommended for this scenario</p>
-            <div class="col"><p style="font-size:200px;font-weight:700;line-height:.95;color:#fff">${chosen.amrs}</p><p class="t44 white">${plural(chosen.amrs, 'AMR', 'AMRs')}</p></div>
-            <p class="t24 ondark">${strat === 'swap' ? `Spare batteries swapped by hand${chosen.extraBatteries ? `, ${chosen.extraBatteries} spare ${plural(chosen.extraBatteries, 'battery', 'batteries')}` : ''}` : 'Auto-charging between tasks'}${F.spare ? `. Includes ${F.spare} standby ${plural(F.spare, 'unit', 'units')}.` : ''}${D.override && D.override !== chosen.amrs ? ` The quotation uses ${D.qty}.` : ''}</p>
+            <p class="t24 ondark">${ovr ? 'Proposed for this scenario' : 'Recommended for this scenario'}</p>
+            <div class="col"><p style="font-size:200px;font-weight:700;line-height:.95;color:#fff">${ovr ? D.qty : chosen.amrs}</p><p class="t44 white">${plural(ovr ? D.qty : chosen.amrs, 'AMR', 'AMRs')}</p></div>
+            ${ovr && simOk && simKeeps ? `<p class="t24 white">The shift simulation shows ${D.qty === 1 ? 'one AMR keeps' : D.qty + ' AMRs keep'} up with all ${SR.lines.filter(L => L.on).length} lines.</p>` : ''}
+            <p class="t24 ondark"${ovr && simOk && simKeeps ? ' hidden' : ''}>${strat === 'swap' ? `Spare batteries swapped by hand${chosen.extraBatteries ? `, ${chosen.extraBatteries} spare ${plural(chosen.extraBatteries, 'battery', 'batteries')}` : ''}` : 'Auto-charging between tasks'}${F.spare ? `. Includes ${F.spare} standby ${plural(F.spare, 'unit', 'units')}.` : ''}${D.override && D.override !== chosen.amrs && !(simOk && simKeeps) ? ` The proposal uses ${D.qty}.` : ''}</p>
             <div style="display:flex;justify-content:center">${ring}</div>
           </div>
           <div class="outline col gap24 grow" style="padding:36px 40px">
+            ${ovr ? `<p class="t24 body"><b>Worst-case check:</b> every trip counted as the longest route. On that basis ${chosen.amrs} ${plural(chosen.amrs, 'AMR', 'AMRs')} would be needed${simOk ? `; with each line's real distance, ${simKeeps ? 'the simulation shows ' + D.qty + ' ' + plural(D.qty, 'AMR', 'AMRs') + ' ' + (D.qty === 1 ? 'is' : 'are') + ' enough' : 'see the simulation results'}` : ''}.</p>` : ''}
             ${bar('Work required per day', F.workH, '#204CBA', n1(F.workH) + ' h')}
             ${bar('Fleet capacity per day', cap, '#0B1220', n1(cap) + ' h')}
             <div class="col gap12">
@@ -494,16 +500,15 @@
       add('battery', 'Charging and battery plan', `
         ${head('Solution', 'Charging and battery plan')}
         <div class="col" style="gap:20px">
-          ${tcard('Auto-charging', `AMR runs up to ${n1(F.runtimeH)} h (8 h empty, 6–7 h loaded), then charges for ${n1(F.chargeH)} h.`, timelineSvg(tlC, H), `${F.charge.amrs} ${plural(F.charge.amrs, 'AMR', 'AMRs')}`, strat === 'charge')}
-          ${tcard('Spare battery swap', `An operator swaps in a charged pack by hand in about ${F.swapMin} min, so the AMR does not wait to charge.`, timelineSvg(tlS, H), `${F.swap.amrs} ${plural(F.swap.amrs, 'AMR', 'AMRs')}${F.swap.extraBatteries ? ` + ${F.swap.extraBatteries} spare ${plural(F.swap.extraBatteries, 'battery', 'batteries')}` : ''}`, strat === 'swap')}
+          ${tcard('Auto-charging', `AMR runs up to ${n1(F.runtimeH)} h (8 h empty, 6–7 h loaded), then charges for ${n1(F.chargeH)} h.`, timelineSvg(tlC, H), ovr && strat === 'charge' ? `${D.qty} ${plural(D.qty, 'AMR', 'AMRs')} proposed` : `${F.charge.amrs} ${plural(F.charge.amrs, 'AMR', 'AMRs')}${ovr ? ' worst case' : ''}`, strat === 'charge')}
+          ${tcard('Spare battery swap', `An operator swaps in a charged pack by hand in about ${F.swapMin} min, so the AMR does not wait to charge.`, timelineSvg(tlS, H), ovr && strat === 'swap' ? `${D.qty} ${plural(D.qty, 'AMR', 'AMRs')} proposed` : `${F.swap.amrs} ${plural(F.swap.amrs, 'AMR', 'AMRs')}${F.swap.extraBatteries ? ` + ${F.swap.extraBatteries} spare ${plural(F.swap.extraBatteries, 'battery', 'batteries')}` : ''}${ovr ? ' worst case' : ''}`, strat === 'swap')}
         </div>
         <div class="row" style="align-items:center;gap:32px"><div class="legend"><span><i style="background:#204CBA"></i>Working</span><span><i style="background:#0B1220"></i>Charging</span><span><i style="background:#8FB0F5"></i>Battery swap</span></div></div>
         <p class="t32 body">${rec}</p>`);
     }
 
     /* ---- Simulation results: the shift simulated in the Simulation tab (lines, queue, battery, doors), with what it assumes ---- */
-    const SR = root.WFCOps && root.WFCOps.summary ? root.WFCOps.summary(S, D) : null;
-    if (SR && SR.ok && SR.stats.made > 0) {
+    if (simOk) {
       const st = SR.stats, cfg = SR.cfg, nA = st.amrs, on = SR.lines.filter(L => L.on).length, pc = st.pct;
       const mmss = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
       const kpi = (label, value, sub) => `<div class="card col f1" style="padding:34px 40px;gap:10px"><p class="eyebrow">${label}</p><p style="font-size:68px;font-weight:700;line-height:1.05">${value}</p><p class="t24 body">${sub}</p></div>`;
