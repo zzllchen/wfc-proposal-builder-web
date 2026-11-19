@@ -86,7 +86,32 @@
           <button type="button" class="btn" data-sheet="settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10"/><path d="M18 6h2"/><circle cx="16" cy="6" r="2"/><path d="M4 12h4"/><path d="M12 12h8"/><circle cx="10" cy="12" r="2"/><path d="M4 18h12"/><path d="M20 18h0"/><circle cx="18" cy="18" r="2"/></svg><span>Settings</span></button>
         </div>
       </div>
-      <div id="simStage"><canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout, with live readings"></canvas></div>
+      <div id="simStage" class="dash">
+        <header class="dhead"><div><h3 id="dTitle">A shift with the AMR</h3><p id="dSub"></p></div><span class="dnote">Simulated estimate based on the settings shown</span></header>
+        <aside class="dcol dleft" aria-label="Live readings">
+          <section class="pcard" id="pClock"></section>
+          <section class="pcard pamrcard" id="pAmr" title="Click to follow this AMR"><div id="pAmrTxt"></div><canvas id="simClose" width="660" height="340" aria-hidden="true"></canvas><p id="pAmrCap" class="pcap"></p></section>
+          <section class="pcard" id="pKpi"></section>
+        </aside>
+        <div class="dmain">
+          <div class="dview">
+            <canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout"></canvas>
+            <div class="vtools" id="vTools">
+<div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
+<button id="simReset" type="button" class="btn ghost" hidden title="Back to the standard angle (R)">Reset view</button>
+<button id="simSpin" type="button" class="btn" aria-pressed="false" title="Slowly turn the whole layout 360° (click again to stop)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.7-6"/><path d="M20 3.5V8h-4.5"/></svg><span class="lbl">360° view</span></button>
+<button id="simFull" class="btn" title="Present full screen (F)"></button>
+            </div>
+          </div>
+          <div class="dtl" id="dTl">
+            <div class="dtlhead"><span>AMR activity across the run</span><span class="dtlhint">Click or drag to jump</span></div>
+            <canvas id="simTl" width="1000" height="76" aria-label="Timeline of what the AMR does"></canvas>
+            <div class="dticks" id="dTicks"></div>
+            <div class="dleg"><span><i style="background:#2F5BD0"></i>Working</span><span><i style="background:#E3A21A"></i>Waiting (door, obstacle)</span><span><i style="background:#1E8A55"></i>Charging</span><span><i style="background:#C6CFE2"></i>Idle</span></div>
+          </div>
+        </div>
+        <aside class="dcol dright" aria-label="Production lines"><section class="pcard" id="pLines"></section></aside>
+      </div>
       <div id="simMsg" hidden></div>
       <p id="simHint" class="simhint">Turn your phone sideways for a bigger picture.</p>
       <div class="taskbar" id="taskBar" hidden>
@@ -107,11 +132,7 @@
         <span id="simNote"></span>
         <button id="obsAdd" type="button" class="btn shiftonly" title="Put an obstacle on a route: click the button, then click the route"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h0"/></svg><span class="lbl">Add obstacle</span></button>
         <button id="obsDel" type="button" class="btn ghost" hidden title="Remove the obstacle you picked (Delete)">Remove</button>
-        <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
-        <button id="simReset" type="button" class="btn ghost" hidden title="Back to the standard angle (R)">Reset view</button>
-        <button id="simSpin" type="button" class="btn" aria-pressed="false" title="Slowly turn the whole layout 360° (click again to stop)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.7-6"/><path d="M20 3.5V8h-4.5"/></svg><span class="lbl">360° view</span></button>
         <button id="simSave" class="btn" title="Record one trip to a video file"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><span class="lbl">Save video</span></button>
-        <button id="simFull" class="btn" title="Present full screen (F)"></button>
       </div>
       <aside id="simSheet" class="simsheet" hidden aria-label="Simulation details"><div class="shead"><h3 id="sheetTitle">Results</h3><button type="button" class="x" id="sheetClose" aria-label="Close">×</button></div><div class="shbody" id="sheetBody"></div></aside>
     </section>

@@ -7,9 +7,9 @@
 (function (root) {
   'use strict';
   const Sim = root.WFCSim, esc = root.WFCSlides.esc;
-  const W = 1920, H = 1080, C30 = Math.cos(Math.PI / 6), S30 = 0.5, VIZ = 5;                                    // VIZ: the AMR is drawn this much bigger than life, so it can be seen
+  let W = 1920, H = 1080; const C30 = Math.cos(Math.PI / 6), S30 = 0.5, VIZ = 5;                                    // VIZ: the AMR is drawn this much bigger than life, so it can be seen
   const FONT = '"DM Sans", Arial, sans-serif', INK = '#0B1220', BLUE = '#2F5BD0', SLATE = '#3A4766', MUTE = '#5B6577', LIGHT = '#8FB0F5', AMBER = '#E3A21A', GREEN = '#1E8A55';
-  const MAP = { x: 70, y: 160, w: 1330, h: 730 }, HX = 1440, HW = 420;
+  let MAP = { x: 70, y: 160, w: 1330, h: 730 }; const HX = 1440, HW = 420;
   const $ = s => document.querySelector(s);
   let cv, ctx, S, D, model, img = null, imgSrc = '', t = 0, playing = true, speedF = 8, view = '3d', last = 0, raf = 0, recState = null, cam = null, inited = false;
   let hover = null, toast = null, hits = [], clockOverride = null, rows = [], dots = [], vz = VIZ;   // vz: how much bigger than life the AMR is drawn (the close-up draws it life size)
@@ -48,7 +48,7 @@
 
   /* ---------- the camera: fit the whole layout into the picture ---------- */
   // the picture of the layout stays inside its own area, even when zoomed in (the cards and counters are never drawn over)
-  const clipWorld = () => { rr(ctx, 50, 150, 1360, 800, 26); ctx.clip(); };
+  const clipWorld = () => { if (dash) { ctx.beginPath(); ctx.rect(0, 0, W, H); } else rr(ctx, 50, 150, 1360, 800, 26); ctx.clip(); };
   const camera = () => {
     const key = [camTag(), model.k, model.aspect].join('|');
     if (!camMemo || camMemo.key !== key) camMemo = { key, cam: buildCam({ az, elev, zoom, px: pan.x, py: pan.y }) };
@@ -201,9 +201,9 @@
     txt(name || 'AMR 01', tx - 82, ty + 7, 20, 700, '#fff'); txt(`${fmt(s.speed, 2)} m/s`, tx + 106, ty + 7, 19, 500, '#B9C6E8', 'right');
   }
   // a life-size close-up of the AMR in the corner of the map, turning as it turns, with what it is doing and the forks' lift as live readings
-  const CU = { x: 1070, y: 160, w: 330, h: 270 };
-  function drawCloseup(s) {
-    const M = D && D.model, cx = CU.x + CU.w / 2 + 12, gy = CU.y + CU.h - 100, sc2 = 62, keep = cam;
+  let CU = { x: 1070, y: 160, w: 330, h: 270 };
+  function drawCloseup(s, opt) {
+    const bare = !!(opt && opt.bare), M = D && D.model, cx = CU.x + CU.w / 2 + 12, gy = CU.y + CU.h - (bare ? 40 : 100), sc2 = 62, keep = cam;
     ctx.save(); rr(ctx, CU.x + 3, CU.y + 3, CU.w - 6, CU.h - 6, 24); ctx.clip();
     const bg = ctx.createLinearGradient(0, CU.y, 0, CU.y + CU.h); bg.addColorStop(0, '#F6F8FD'); bg.addColorStop(1, '#E6ECF8'); ctx.fillStyle = bg; ctx.fillRect(CU.x, CU.y, CU.w, CU.h);
     const g0 = ctx.createRadialGradient(cx, gy, 0, cx, gy, 130); g0.addColorStop(0, 'rgba(47,91,208,.22)'); g0.addColorStop(1, 'rgba(47,91,208,0)');
@@ -212,11 +212,11 @@
     vz = 1; drawAmrScene(s, true); vz = VIZ; cam = keep;
     ctx.restore();
     const fk = `Forks ${Math.round(s.lift * (M && M.liftMm ? M.liftMm : 205))} mm`, ph = s.phase || s.label || '';   // two small labels on soft pills, so the AMR never draws over them
-    ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.88)'; rr(ctx, CU.x + 16, CU.y + 16, 178, 30, 15); ctx.fill(); rr(ctx, CU.x + CU.w - 16 - (width(fk, 16, 600) + 24), CU.y + 16, width(fk, 16, 600) + 24, 30, 15); ctx.fill(); ctx.restore();
-    fitTxt(ph, CU.x + 28, CU.y + 37, 156, 16, 700, s.speed > 0.02 || s.lift > 0.02 ? BLUE : MUTE);
+    ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.88)'; if (!bare) { rr(ctx, CU.x + 16, CU.y + 16, 178, 30, 15); ctx.fill(); } rr(ctx, CU.x + CU.w - 16 - (width(fk, 16, 600) + 24), CU.y + 16, width(fk, 16, 600) + 24, 30, 15); ctx.fill(); ctx.restore();
+    if (!bare) fitTxt(ph, CU.x + 28, CU.y + 37, 156, 16, 700, s.speed > 0.02 || s.lift > 0.02 ? BLUE : MUTE);
     txt(fk, CU.x + CU.w - 28, CU.y + 37, 16, 600, MUTE, 'right');
-    txt('PROPOSED AMR', CU.x + 26, CU.y + CU.h - 52, 15, 700, BLUE); fitTxt(M ? M.name : 'Pallet jack AMR', CU.x + 26, CU.y + CU.h - 24, CU.w - 52, 21, 700, INK);
-    if (M && M.payloadKg) txt(`${fmt(M.payloadKg)} kg payload`, CU.x + CU.w - 26, CU.y + CU.h - 52, 15, 500, MUTE, 'right');
+    if (!bare) { txt('PROPOSED AMR', CU.x + 26, CU.y + CU.h - 52, 15, 700, BLUE); fitTxt(M ? M.name : 'Pallet jack AMR', CU.x + 26, CU.y + CU.h - 24, CU.w - 52, 21, 700, INK);
+      if (M && M.payloadKg) txt(`${fmt(M.payloadKg)} kg payload`, CU.x + CU.w - 26, CU.y + CU.h - 52, 15, 500, MUTE, 'right'); }
   }
   // the path being driven: the part already driven is filled in as it goes. A task's path is drawn here (it is not one of the saved routes).
   function drawProgress(s, mdl) {
@@ -515,14 +515,108 @@
     if (placing) { const msg = 'Click on a route to put an obstacle there'; ctx.font = `600 20px ${FONT}`; const w = ctx.measureText(msg).width + 44; ctx.save(); ctx.fillStyle = ORANGE; rr(ctx, MAP.x + 20, MAP.y + 70, w, 46, 14); ctx.fill(); ctx.restore(); txt(msg, MAP.x + 42, MAP.y + 100, 20, 600, '#fff'); }
     return serving;
   }
+  /* ---------- the dashboard: the shift view puts its readings in HTML panels beside the picture (the picture gets the space; the video keeps the full composite) ---------- */
+  let dash = false, DH = 800, legacyHold = false;
+  const wantDash = () => mode === 'shift' && !recState && !legacyHold;
+  function layout(on, w, h) {
+    const nw = on ? w : 1920, nh = on ? h : 1080;
+    if (on === dash && cv.width === nw && cv.height === nh) return;
+    dash = on; W = nw; H = nh; MAP = on ? { x: 22, y: 22, w: W - 44, h: H - 44 } : { x: 70, y: 160, w: 1330, h: 730 };
+    cv.width = W; cv.height = H; if (stat) { stat.width = W; stat.height = H; } statKey = ''; camMemo = null; tlKey = '';
+    const st = $('#simStage'); if (st) st.classList.toggle('dash', on);
+    if (on) setTimeout(fitView, 30);
+  }
+  function applyLayout() { layout(wantDash(), W, H); }
+  // the picture takes the shape of the space it is given (about 0.9 screen pixels to a drawing pixel, so its labels keep a readable size at any window size)
+  function fitView() {
+    if (!dash || !cv) return; const box = $('.dview'); if (!box) return; const r = box.getBoundingClientRect(); if (r.width < 80 || r.height < 80) return;
+    const nw = Math.round(clampV(r.width / 0.9, 900, 2400)), nh = Math.round(clampV(r.height / 0.9, 500, 1500));
+    if (Math.abs(nw - W) > 12 || Math.abs(nh - H) > 12 || !dash) layout(true, nw, nh);
+  }
+  function drawOverlays() {
+    if (toast && wall() - toast.at < 3.2) { ctx.font = `600 20px ${FONT}`; const w = Math.min(MAP.w - 40, ctx.measureText(toast.text).width + 44); ctx.save(); ctx.fillStyle = BLUE; rr(ctx, MAP.x + 20, MAP.y + 16, w, 46, 14); ctx.fill(); ctx.restore(); fitTxt(toast.text, MAP.x + 42, MAP.y + 46, w - 44, 20, 600, '#fff'); }
+    if (placing) { const msg = 'Click on a route to put an obstacle there'; ctx.font = `600 20px ${FONT}`; const w = ctx.measureText(msg).width + 44; ctx.save(); ctx.fillStyle = ORANGE; rr(ctx, MAP.x + 20, MAP.y + 70, w, 46, 14); ctx.fill(); ctx.restore(); txt(msg, MAP.x + 42, MAP.y + 100, 20, 600, '#fff'); }
+  }
+  // the AMR close-up, drawn into the little canvas in the left panel
+  function drawCloseupDom(s) {
+    const c = $('#simClose'); if (!c || !s) return;
+    const main = ctx, keepCU = CU; ctx = c.getContext('2d'); CU = { x: 0, y: 0, w: 330, h: 170 };
+    ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, 330, 170); drawCloseup(s, { bare: true }); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx = main; CU = keepCU;
+  }
+  // the timeline under the picture: what AMR 1 does across the run; what is still to come is lighter; click or drag to jump
+  let tlKey = '', tlCache = null;
+  function drawTimelineDom(tt) {
+    const c = $('#simTl'); if (!c || !ops) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1), cw = Math.max(240, Math.round(c.clientWidth * dpr)), ch = Math.round(38 * dpr);
+    if (c.width !== cw || c.height !== ch) { c.width = cw; c.height = ch; tlKey = ''; }
+    const key = [opsSig, cw, ch].join('|');
+    if (key !== tlKey || !tlCache) {
+      tlKey = key; tlCache = document.createElement('canvas'); tlCache.width = cw; tlCache.height = ch; const g = tlCache.getContext('2d');
+      const span = ops.Hend, NB = Math.max(60, Math.min(240, Math.round(cw / (5 * dpr)))), bw = cw / NB, bins = Array.from({ length: NB }, () => ({ work: 0, wait: 0, charge: 0, idle: 0 }));
+      g.fillStyle = '#E3E8F1'; g.fillRect(0, 0, cw, ch);
+      ops.amrs[0].model.segs.forEach(sg => { const k = CAT[sg.kind] || 'work'; const b0 = Math.max(0, Math.floor(sg.t0 / span * NB)), b1 = Math.min(NB - 1, Math.floor(sg.t1 / span * NB)); for (let b = b0; b <= b1; b++) { const lo = Math.max(sg.t0, b * span / NB), hi = Math.min(sg.t1, (b + 1) * span / NB); if (hi > lo) bins[b][k] += hi - lo; } });
+      bins.forEach((b, i) => { let y = ch; const tot = b.work + b.wait + b.charge + b.idle || 1; ['idle', 'charge', 'wait', 'work'].forEach(k => { const hg = ch * b[k] / tot; if (hg > 0.2) { g.fillStyle = CATC[k]; g.fillRect(i * bw, y - hg, Math.ceil(bw) - 1, hg); } y -= hg; }); });
+      const hm = sx => { sx = Math.round(sx / 60); return Math.floor(sx / 60) + ':' + String(sx % 60).padStart(2, '0'); };
+      put('dTicks', [0, 1, 2, 3, 4].map(i => `<span>${hm(span * i / 4)}</span>`).join(''));
+    }
+    const g = c.getContext('2d'); g.clearRect(0, 0, cw, ch); g.drawImage(tlCache, 0, 0);
+    const x = Math.min(1, tt / ops.Hend) * cw; g.fillStyle = 'rgba(255,255,255,.55)'; g.fillRect(x, 0, cw - x, ch);
+    g.fillStyle = INK; g.fillRect(x - 1.5 * dpr, 0, 3 * dpr, ch); g.fillStyle = '#fff'; g.strokeStyle = INK; g.lineWidth = 2.5 * dpr; g.beginPath(); g.arc(Math.max(9 * dpr, Math.min(cw - 9 * dpr, x)), ch / 2, 8 * dpr, 0, 7); g.fill(); g.stroke();
+  }
+  // the panels: written at about 8 times a second, and only when the text changed
+  let panelAt = 0; const panelCache = {};
+  function put(id, html) { if (panelCache[id] === html) return; panelCache[id] = html; const el = document.getElementById(id); if (el) el.innerHTML = html; }
+  let fitN = 0;
+  function updatePanels(tt, sts) {
+    if (++fitN % 15 === 0) fitView();   // (a resize observer can lag, so the shape is checked now and then too)
+    drawCloseupDom(sts[0]); drawTimelineDom(tt);
+    const nowT = performance.now(); if (nowT - panelAt < 120) return; panelAt = nowT;
+    const a0 = ops.amrs[0], s = sts[0], bat = OPS.valueAt(a0.batPts, tt, true), Hn = ops.H, M = D && D.model, n = ops.amrs.length, cfg = ops.cfg;
+    const cl = S.client && S.client.name ? S.client.name : '', on = ops.lines.filter(Lx => Lx.on).length;
+    put('dTitle', cfg.scenario === 'shift' ? `A shift with the AMR${n > 1 ? 's' : ''}` : cfg.scenario === 'day' ? `A day with the AMR${n > 1 ? 's' : ''}` : `The AMR${n > 1 ? 's' : ''} at work`);
+    put('dSub', esc(`${cl ? cl + '  ·  ' : ''}${on} line${on === 1 ? '' : 's'}  ·  ${n} × ${M ? M.name : 'Pallet jack AMR'}  ·  ${cfg.charge === 'swap' ? 'battery swap' : 'automatic charging'}`));
+    // the clock and the battery
+    const whole = h => h > 0 && h % 86400 === 0, cs = whole(Hn) && tt >= Hn - 0.5 ? `${Hn / 3600}:00:00` : clock(tt), dm = /^(Day \d+)\s+(.*)$/.exec(cs);
+    const chg = s.kind === 'charge' || s.kind === 'swap', bc = bat < 0.2 ? '#D8362F' : bat < 0.5 ? AMBER : '#1E9E5A';
+    put('pClock', `<div class="plabel">Shift clock</div><div class="pclock"><b>${esc(dm ? dm[2] : cs)}</b>${dm ? `<span class="pday">${esc(dm[1])}</span>` : ''}</div>`
+      + `<div class="psub">of ${whole(Hn) ? Hn / 3600 + ':00:00' : esc(clock(Hn))}${ops.scenarioHours > 24 ? ' · day 1 shown' : ''}</div>`
+      + `<div class="prow"><span>${n > 1 ? 'AMR 1 battery' : 'Battery'}</span>${chg ? `<em class="pchg">${s.kind === 'swap' ? 'Swapping' : bat >= 0.995 ? 'Full' : 'Charging'}</em>` : ''}<b>${fmt(bat * 100)}%</b></div><div class="pbar"><i style="width:${Math.max(3, bat * 100)}%;background:${bc}"></i></div>`);
+    // what AMR 1 is doing
+    const job = s.jobRef, L = job && !job.service && job.pallet !== undefined ? ops.lines[ops.pallets.find(p => p.id === job.pallet).li] : null, serving = L ? L.li : -1;
+    put('pAmrTxt', `<div class="pamr"><i class="dot" style="background:${KIND[s.kind] || SLATE}"></i><div><b>${esc(s.label)}</b><span>${esc((n > 1 ? 'AMR 1 of ' + n + ' · ' : '') + (L ? `${L.name} → ${job.toName || 'the drop-off'}${s.phase ? ' · ' + s.phase : ''}` : (s.phase || '')))}</span></div></div>`);
+    put('pAmrCap', esc(M ? `${M.name}${M.payloadKg ? ' · ' + fmt(M.payloadKg) + ' kg payload' : ''}` : 'Pallet jack AMR'));
+    // the four counters
+    const q = ops.pallets.filter(p => p.tCall <= tt && (p.tAssign === null || p.tAssign > tt)).sort((p1, p2) => p1.tCall - p2.tCall);
+    const moved = ops.pallets.filter(p => p.tDrop !== null && p.tDrop <= tt), made = ops.pallets.filter(p => p.tFinish <= tt).length;
+    const lead = moved.length ? moved.reduce((sm, p) => sm + p.tDrop - p.tCall, 0) / moved.length : 0, c = catAt(a0, tt), tot = Math.max(1, tt);
+    const qmax = ops.series.queue.reduce((mx, p) => p[0] <= tt ? Math.max(mx, p[1]) : mx, 0);
+    const kpi = (l, v, sub) => `<div class="kpi"><span>${l}</span><b>${esc(v)}</b><em>${esc(sub)}</em></div>`;
+    put('pKpi', `<div class="pkpi">${kpi('Pallets moved', String(moved.length), `of ${made} made`)}${kpi('Time per pallet', moved.length ? mm(lead) : '—', 'call to drop-off')}${kpi('AMR working', fmt(100 * c.work / tot) + '%', `${fmt(100 * c.charge / tot)}% charging`)}${kpi('Queue now', String(q.length), `max ${qmax} so far`)}</div>`);
+    // the lines: LINE | PALLET PROGRESS (fills while a pallet is packed) | STATUS in words (Making, Ready, Collecting, Idle)
+    const rows = ops.lines.filter(Lx => Lx.on).map(Lx => {
+      const st = lineState(Lx, tt), act = Lx.li === serving, w = st.waiting ? 100 : st.producing ? Math.max(8, st.prog * 100) : 0;
+      const label = act ? 'Collecting' : st.waiting ? (st.waiting > 1 ? `${st.waiting} ready` : 'Ready') : st.producing ? 'Making' : 'Idle', cls = act ? 'col' : st.waiting ? 'rdy' : st.producing ? '' : 'idle';
+      return `<li class="lr${act ? ' act' : ''}" data-li="${Lx.li}" title="Click to look at this line in the picture"><i class="tag">${esc(Lx.tag)}</i><span class="nm">${esc(Lx.name)}</span><span class="lbar"><i class="${st.waiting ? 'rdy' : ''}" style="width:${w.toFixed(0)}%"></i></span><span class="stt ${cls}">${label}</span></li>`;
+    }).join('');
+    const qhtml = q.length ? `<div class="qrow">${q.slice(0, 4).map(p => `<span class="qchip"><i class="tag">${esc(ops.lines[p.li].tag)}</i>${mm(tt - p.tCall)}</span>`).join('')}<small>time waited</small></div>` : `<div class="qnone">The AMR has caught up</div>`;
+    put('pLines', `<div class="plabel">Production lines</div><p class="lsub">Each line packs a pallet every ${fmt(cfg.intervalMin)} min</p>`
+      + `<div class="lcap"><span>Line</span><span></span><span>Progress</span><span>Status</span></div><ul class="llist">${rows}</ul>`
+      + `<div class="qbox"><div class="qhead"><span>Waiting for pickup</span><b>${q.length ? `${q.length} ${q.length === 1 ? 'pallet' : 'pallets'}` : 'none'}</b></div>${qhtml}</div>`);
+  }
+  function focusLine(li) {
+    const L = ops && ops.lines.find(q => q.li === li); if (!L) return;
+    focusOn({ kind: 'line', id: li, wx: L.pick.x + Math.cos(L.hd) * 0.47 * VIZ, wy: L.pick.y + Math.sin(L.hd) * 0.47 * VIZ });
+  }
+  function focusAmr() { if (!ops || !ops.amrs[0]) return; const q = Sim.at(ops.amrs[0].model, Math.min(t, ops.Hend)); focusOn({ kind: 'amr', id: 0, wx: q.x, wy: q.y }); }
+
   function frameOps(tt) {
-    const key = ['ops', camTag(), speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig, opsSig].join('|');
+    const key = ['ops', camTag(), speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig, opsSig, W, H].join('|');
     if (!stat) { stat = document.createElement('canvas'); stat.width = W; stat.height = H; }
     if (key !== statKey) {
       statKey = key; const main = ctx; ctx = stat.getContext('2d'); cam = camera();
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
       const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#FBFCFE'); bg.addColorStop(1, '#E9EEF8'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      ctx.save(); clipWorld(); drawGround(); drawAreas(); drawRoutesBase(opsModel); drawStations(ops.lines.map(L => ({ x: L.pick.x, y: L.pick.y, tag: L.tag, far: L.ri === opsModel.far }))); ctx.restore(); drawHudStaticOps(); ctx = main;
+      ctx.save(); clipWorld(); drawGround(); drawAreas(); drawRoutesBase(opsModel); drawStations(ops.lines.map(L => ({ x: L.pick.x, y: L.pick.y, tag: L.tag, far: L.ri === opsModel.far }))); ctx.restore(); if (!dash) drawHudStaticOps(); ctx = main;
     }
     cam = camera(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stat, 0, 0);
     const sts = ops.amrs.map(a => Sim.at(a.model, tt)), s0 = sts[0], j0 = s0.jobRef, serving = j0 && !j0.service && j0.pallet !== undefined ? ops.pallets.find(p => p.id === j0.pallet).li : -1;
@@ -533,7 +627,8 @@
     drawLines(tt, serving); drawDoors(tt); drawObstacles(tt);
     sts.forEach((s, i) => { drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')); picks.push({ kind: 'amr', id: i, wx: s.x, wy: s.y, wz: 0.7 * VIZ, r: 64 }); });
     ctx.restore();
-    drawCloseup(s0); drawHudOps(tt, sts); drawInspector(info);
+    if (dash) { hits = []; drawOverlays(); updatePanels(tt, sts); } else { drawCloseup(s0); drawHudOps(tt, sts); }
+    drawInspector(info);
   }
 
   /* ---------- the picture ---------- */
@@ -637,6 +732,7 @@
   function startRecording() {
     if (!model || !model.ok || recState) return;
     if (!window.MediaRecorder || !cv.captureStream) { setNote('This browser cannot record video. Use Edge or Chrome.'); return; }
+    legacyHold = true; applyLayout();   // the saved video is the full picture with the readings on it
     const types = ['video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'], type = types.find(x => MediaRecorder.isTypeSupported(x)) || '';
     const trips = 1, chunks = [], rec = new MediaRecorder(cv.captureStream(30), Object.assign({ videoBitsPerSecond: 9e6 }, type ? { mimeType: type } : {}));
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
@@ -644,14 +740,14 @@
       const blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' }), ext = /mp4/.test(rec.mimeType) ? 'mp4' : 'webm', a = document.createElement('a');
       a.href = URL.createObjectURL(blob); a.download = `${(S.client.name || 'Client').replace(/[\/:*?"<>|]+/g, ' ')} - AMR simulation.${ext}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000);
       if (recState && recState.keep) speedF = recState.keep;
-      setNote(`Video saved to your Downloads folder (${ext.toUpperCase()}).`); recState = null; ui();
+      setNote(`Video saved to your Downloads folder (${ext.toUpperCase()}).`); recState = null; legacyHold = false; applyLayout(); ui();
     };
     fresh();
     if (mode === 'shift' && ops) { recState = { rec, end: ops.Hend, keep: speedF }; speedF = Math.max(speedF, ops.Hend / 90); }   // the whole shift in about a minute and a half
     else recState = { rec, end: task ? model.endT : Sim.jobsUntil(model, trips) + 0.01 };
     ui(); frame(0); rec.start(200);
   }
-  function finishRecording() { const r = recState; if (!r) return; setTimeout(() => { try { r.rec.stop(); } catch (e) { recState = null; ui(); } }, 600); playing = false; }   // hold the last frame a moment
+  function finishRecording() { const r = recState; if (!r) return; setTimeout(() => { try { r.rec.stop(); } catch (e) { recState = null; legacyHold = false; applyLayout(); ui(); } }, 600); playing = false; }   // hold the last frame a moment
 
   /* ---------- presentation mode: the simulation alone, full screen, with only the playback controls ---------- */
   const ICON = {
@@ -669,7 +765,7 @@
       if (el.requestFullscreen && document.fullscreenEnabled && !document.fullscreenElement) el.requestFullscreen({ navigationUI: 'hide' }).then(() => { try { screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* phones only */ } }).catch(() => {});
     } else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     if (on) showBar(2800); else { clearTimeout(idleT); clearTimeout(stillT); el.classList.remove('showbar', 'still'); }
-    ui();
+    ui(); setTimeout(fitView, 60); setTimeout(fitView, 500);   // the picture takes the new shape
   }
   // in presentation mode the controls are OUT OF THE WAY (they used to float over the picture and hid words at the bottom): they show for a moment when it starts,
   // then only when the pointer goes to the bottom edge or onto the bar (a tap on a touch screen, or Tab, brings them back); Space, F and Esc work all the time
@@ -756,7 +852,7 @@
   function drawFocus(info) {
     if (!info) return;
     const a = cam.P(info.pos[0], info.pos[1], 0), g = ctx.createRadialGradient(a[0], a[1], 130, a[0], a[1], 620); g.addColorStop(0, 'rgba(14,22,48,0)'); g.addColorStop(1, 'rgba(14,22,48,.28)');
-    ctx.save(); ctx.fillStyle = g; ctx.fillRect(50, 150, 1360, 800); ctx.restore();   // (inside the rounded clip)
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();   // (inside the clip)
     const ph = (wall() * 0.9) % 1, rx = info.rm * cam.sc * (1 + ph * 0.1);
     ctx.save(); ctx.strokeStyle = `rgba(47,91,208,${0.85 - ph * 0.6})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(a[0], a[1], rx, rx * (cam.iso ? 0.58 * SQ() : 1), 0, 0, 7); ctx.stroke(); ctx.restore();
   }
@@ -935,6 +1031,14 @@
   function init() {
     if (inited) return; inited = true;
     cv = $('#simCv'); ctx = cv.getContext('2d'); speedF = speedOf[mode];
+    applyLayout(); if (window.ResizeObserver) { const ro = new ResizeObserver(() => { if (dash) fitView(); }); ro.observe($('.dview')); }
+    $('#pLines').addEventListener('click', e => { const r = e.target.closest('[data-li]'); if (r) focusLine(+r.dataset.li); });
+    $('#pAmr').addEventListener('click', focusAmr);
+    const tlEl = $('#simTl'); let tlDrag = false, tlId = -1;
+    const seekTl = e => { if (!ops) return; const r = tlEl.getBoundingClientRect(); t = clampV((e.clientX - r.left) / Math.max(1, r.width), 0, 1) * ops.Hend; };
+    tlEl.addEventListener('pointerdown', e => { if (recState) return; tlDrag = true; tlId = e.pointerId; try { tlEl.setPointerCapture(e.pointerId); } catch (err) { /* gone */ } seekTl(e); });
+    tlEl.addEventListener('pointermove', e => { if (tlDrag && e.pointerId === tlId) seekTl(e); });
+    ['pointerup', 'pointercancel'].forEach(ev => tlEl.addEventListener(ev, () => { tlDrag = false; }));
     $('#simPlay').addEventListener('click', () => { if (recState) return; if (!playing && ((task && model.endT <= t) || (mode === 'shift' && ops && t >= ops.Hend - 0.5))) fresh(); else playing = !playing; ui(); });
     $('#simRestart').addEventListener('click', () => { if (recState) return; fresh(); ui(); });
     $('#simSpeed').addEventListener('click', e => { const b = e.target.closest('button'); if (b && !recState) { speedF = +b.dataset.v; speedOf[mode] = speedF; ui(); } });
@@ -945,7 +1049,7 @@
     $('#taskSwap').addEventListener('click', () => { const a = $('#taskFrom'), b = $('#taskTo'), v = a.value; a.value = b.value; b.value = v; syncRun(); });
     $('#taskFrom').addEventListener('change', syncRun); $('#taskTo').addEventListener('change', syncRun);
     // the shift controls
-    $('#simMode').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b || recState || b.dataset.m === mode) return; speedOf[mode] = speedF; mode = b.dataset.m; speedF = speedOf[mode]; placing = false; selObs = null; statKey = ''; t = 0; playing = true; if (mode === 'trip') { task = null; fresh(); } else { obsSince = {}; rebuildOps(true); } ui(); });
+    $('#simMode').addEventListener('click', e => { const b = e.target.closest('[data-m]'); if (!b || recState || b.dataset.m === mode) return; speedOf[mode] = speedF; mode = b.dataset.m; speedF = speedOf[mode]; placing = false; selObs = null; statKey = ''; t = 0; playing = true; applyLayout(); if (mode === 'trip') { task = null; fresh(); } else { obsSince = {}; rebuildOps(true); } ui(); });
     $('#simScen').addEventListener('change', e => { setSim('scenario', e.target.value); t = 0; });
     $('#simHours').addEventListener('change', e => { const v = parseFloat(e.target.value); if (v > 0) { setSim('customH', Math.min(v, 8760)); t = 0; } });
     $('#simAmrs').addEventListener('click', e => { const b = e.target.closest('[data-d]'); if (!b) return; const n = Math.max(1, Math.min(10, OPS.settings(S, D).amrs + +b.dataset.d)); setSim('amrs', n); });
@@ -977,7 +1081,7 @@
     });
     // the camera: drag to turn and tilt (one finger sideways on a phone), right-drag or Shift-drag to move, scroll to zoom toward the pointer; click the AMR, a door or a
     // pallet to fly in on it; "360° view" turns the whole layout; "Reset view" (or R, or Esc) goes back to the overview
-    const inMap = p => p.x < 1430 && p.y > 130 && p.y < 960;
+    const inMap = p => dash || (p.x < 1430 && p.y > 130 && p.y < 960);
     cv.addEventListener('contextmenu', e => e.preventDefault());
     cv.addEventListener('pointerdown', e => {
       if (recState || placing || down || !inMap(toCanvas(e))) return;
