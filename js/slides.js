@@ -501,6 +501,37 @@
         <p class="t32 body">${rec}</p>`);
     }
 
+    /* ---- Simulation results: the shift simulated in the Simulation tab (lines, queue, battery, doors), with what it assumes ---- */
+    const SR = root.WFCOps && root.WFCOps.summary ? root.WFCOps.summary(S, D) : null;
+    if (SR && SR.ok && SR.stats.made > 0) {
+      const st = SR.stats, cfg = SR.cfg, nA = st.amrs, on = SR.lines.filter(L => L.on).length, pc = st.pct;
+      const mmss = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+      const kpi = (label, value, sub) => `<div class="card col f1" style="padding:34px 40px;gap:10px"><p class="eyebrow">${label}</p><p style="font-size:68px;font-weight:700;line-height:1.05">${value}</p><p class="t24 body">${sub}</p></div>`;
+      const parts = [['Working', pc.working, '#204CBA'], ['Waiting at doors and obstacles', pc.waiting, '#E3A21A'], [cfg.charge === 'swap' ? 'Battery swaps' : 'Charging', pc.charging, '#1E8A55'], ['Idle', pc.idle, '#C6CFE2']];
+      const keeps = st.waitingAtEnd <= Math.max(2, on);
+      add('simresults', 'Simulation results', `
+        ${head('Simulation', 'Simulated results: ' + SR.scenarioLabel.toLowerCase())}
+        <div class="row" style="gap:28px">
+          ${kpi('Pallets moved', `${n0(st.moved)}<span style="font-size:32px;color:var(--muted);font-weight:600"> of ${n0(st.made)}</span>`, keeps ? `${nA === 1 ? 'One AMR keeps up' : nA + ' AMRs keep up'} with ${on} lines` : `${n0(st.made - st.moved)} still waiting at the end`)}
+          ${kpi('Time per pallet', mmss(st.avgLeadS), 'from the call button to the drop-off, on average')}
+          ${kpi('AMR busy', Math.round((pc.working + pc.waiting) * 100) + '%', `of the time; ${Math.round(pc.charging * 100)}% ${cfg.charge === 'swap' ? 'battery swaps' : 'charging'}`)}
+        </div>
+        <div class="row" style="gap:28px;align-items:stretch">
+          <div class="card col f1" style="padding:32px 40px;gap:20px;flex:1.6">
+            <p class="eyebrow">Where the AMR's time goes</p>
+            <div style="display:flex;height:28px;border-radius:14px;overflow:hidden">${parts.map(p => `<div style="width:${(p[1] * 100).toFixed(2)}%;background:${p[2]}"></div>`).join('')}</div>
+            <div class="row" style="gap:28px;flex-wrap:wrap">${parts.map(p => `<p class="t24 body" style="display:flex;align-items:center;gap:10px"><i style="display:inline-block;width:18px;height:18px;border-radius:5px;background:${p[2]}"></i>${p[0]} <b>${Math.round(p[1] * 100)}%</b></p>`).join('')}</div>
+          </div>
+          <div class="card dark col" style="padding:32px 40px;gap:14px;flex:1">
+            <p class="eyebrow sky">Distance and energy</p>
+            <p class="t32 white"><b>${n1(st.distKm)} km</b> driven</p>
+            <p class="t32 white">${st.usedKwh !== null ? `<b>${n2(st.usedKwh)} kWh</b> · ${rm(st.costRM)}` : 'Energy: battery size not known'}</p>
+            <p class="t24 ondark">${st.doorStops ? `${n0(st.doorStops)} door stops, ${n1(st.doorWaitS / 60)} min waiting` : 'No doors on the route'}</p>
+          </div>
+        </div>
+        <p class="t24 lbl">Simulated estimate based on the settings shown: ${on} lines, one pallet every ${n0(cfg.intervalMin)} min each; ${nA} AMR${nA > 1 ? 's' : ''} at ${n2(S.route.speedMps)} m/s; ${cfg.charge === 'swap' ? `battery swap in ${n0(cfg.swapMin)} min` : `charging below ${n0(cfg.lowPct)}%, ${n1(cfg.chargeH)} h full charge`}. Assumed: door ${n0(cfg.doorOpenS)} s to open, ${n0(cfg.doorCloseS)} s to close; RM ${n2(cfg.kwhPrice)}/kWh.</p>`);
+    }
+
     /* ---- Workflow ---- */
     const phases = parseWorkflow(S.workflow.lines);
     if (phases.length) {   // four phases left to right, each a short list; sized to fit above the footer

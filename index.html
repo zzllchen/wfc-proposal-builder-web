@@ -72,6 +72,20 @@
     <div id="scroll" hidden></div>
     <div id="editor" hidden></div>
     <section id="sim" hidden aria-label="Simulation">
+      <div class="simtop" id="simTop">
+        <div id="simMode" class="seg" role="group" aria-label="What to simulate"><button class="tab" data-m="shift" title="Every line, the pickup queue, charging, doors and obstacles over a shift or longer">Shift</button><button class="tab" data-m="trip" title="One trip at a time: the longest route, or between two points you choose">One trip</button></div>
+        <div class="shiftonly sgrp">
+          <label class="pick scen"><span>Run</span><select id="simScen" aria-label="How long to simulate"><option value="shift">One shift</option><option value="day">Full day</option><option value="week">Week</option><option value="month">Month</option><option value="custom">Custom hours</option></select></label>
+          <input id="simHours" class="hrs" type="number" min="1" max="8760" step="1" inputmode="numeric" aria-label="Custom number of hours" hidden>
+          <div id="simAmrs" class="stepper" role="group" aria-label="Number of AMRs"><button type="button" class="iconbtn" data-d="-1" aria-label="One AMR fewer">−</button><span><b id="simAmrsN">1</b> AMR</span><button type="button" class="iconbtn" data-d="1" aria-label="One AMR more">+</button></div>
+          <div id="simCharge" class="seg" role="group" aria-label="Charging"><button class="tab" data-v="auto" title="The AMR drives to its charger by itself">Auto charge</button><button class="tab" data-v="swap" title="Staff swap the battery when it runs low">Battery swap</button></div>
+        </div>
+        <div class="sp"></div>
+        <div class="shiftonly sgrp">
+          <button type="button" class="btn" data-sheet="results"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20H2"/></svg><span>Results</span></button>
+          <button type="button" class="btn" data-sheet="settings"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10"/><path d="M18 6h2"/><circle cx="16" cy="6" r="2"/><path d="M4 12h4"/><path d="M12 12h8"/><circle cx="10" cy="12" r="2"/><path d="M4 18h12"/><path d="M20 18h0"/><circle cx="18" cy="18" r="2"/></svg><span>Settings</span></button>
+        </div>
+      </div>
       <div id="simStage"><canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout, with live readings"></canvas></div>
       <div id="simMsg" hidden></div>
       <p id="simHint" class="simhint">Turn your phone sideways for a bigger picture.</p>
@@ -91,10 +105,13 @@
         <div id="simSpeed" class="seg" aria-label="Playback speed"><button class="tab" data-v="1">1×</button><button class="tab" data-v="2">2×</button><button class="tab" data-v="4">4×</button><button class="tab" data-v="8">8×</button><button class="tab" data-v="16">16×</button></div>
         <div class="sp"></div>
         <span id="simNote"></span>
+        <button id="obsAdd" type="button" class="btn shiftonly" title="Put an obstacle on a route: click the button, then click the route"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h0"/></svg><span class="lbl">Add obstacle</span></button>
+        <button id="obsDel" type="button" class="btn ghost" hidden title="Remove the obstacle you picked (Delete)">Remove</button>
         <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
         <button id="simSave" class="btn" title="Record one trip to a video file"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10l5-3v10l-5-3"/></svg><span class="lbl">Save video</span></button>
         <button id="simFull" class="btn" title="Present full screen (F)"></button>
       </div>
+      <aside id="simSheet" class="simsheet" hidden aria-label="Simulation details"><div class="shead"><h3 id="sheetTitle">Results</h3><button type="button" class="x" id="sheetClose" aria-label="Close">×</button></div><div class="shbody" id="sheetBody"></div></aside>
     </section>
     <section id="concept" hidden>
       <div class="cvbar">
@@ -141,6 +158,7 @@
 <script src="js/slides.js"></script>
 <script src="js/layout-editor.js"></script>
 <script src="js/sim.js"></script>
+<script src="js/ops.js"></script>
 <script src="js/sim-ui.js"></script>
 <script src="js/concept.js"></script>
 <script src="js/intake.js"></script>

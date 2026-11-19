@@ -628,6 +628,6 @@
     return list;
   }
   function focusSection(id) { openSec = id; renderSide(); markMissing(); }
-  window.WFCApp = { readImg, missingList, focusSection, setView, view: () => viewMode, state: () => S, derived: () => D, slides: () => out, flush, select, current: () => cur, docs: () => docs, active: () => act, addDoc, activate, closeDoc, openEditor, closeEditor };
+  window.WFCApp = { changed: () => refresh(), readImg, missingList, focusSection, setView, view: () => viewMode, state: () => S, derived: () => D, slides: () => out, flush, select, current: () => cur, docs: () => docs, active: () => act, addDoc, activate, closeDoc, openEditor, closeEditor };
   start();
 })();

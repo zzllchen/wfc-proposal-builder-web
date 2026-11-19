@@ -170,14 +170,15 @@
   // where everything is at second t
   function at(m, t) {
     t = Math.max(t, 0); ensure(m, t);
+    if (m.mode === 'ops') t = Math.min(t, Math.max(0, m.endT - 1e-6));   // a shift timeline (js/ops.js) ends where the scenario ends
     const last = m.jobs[m.jobs.length - 1];
     if (m.mode === 'task' && last && t >= m.endT) {   // the task is done: it stands where it put the pallet down
       return { x: m.endPos.x, y: m.endPos.y, heading: m.endHd, speed: 0, accel: 0, phase: '', laden: false, lift: 0, kind: 'idle', label: LABEL.idle, travelled: last.distanceM, job: m.jobs.length, route: last.ri, jobT: last.timeS, jobS: last.timeS, jobDistanceM: last.distanceM, done: m.jobs.length, t, there: false, atKind: 'idle', finished: true };
     }
     const s = findSeg(m, t), job = m.jobs[s.job], e = t - s.t0, dur = s.t1 - s.t0, ph = m.phys;
     let x, y, speed = 0, accel = 0, heading, laden = s.laden, lift = s.laden ? 1 : 0, travelled = s.base || 0, phase = '', waiting = false, leg = null, legS = 0;
-    if (s.kind === 'drive' || s.kind === 'out') {
-      const st = s.leg.at(e), p = s.leg.pos(st.s); x = p.x; y = p.y; speed = st.v; accel = st.a; heading = s.leg.head(st.s); travelled = s.base + st.s; leg = s.leg; legS = st.s;
+    if (s.kind === 'drive' || s.kind === 'out' || s.kind === 'go') {
+      const ts = s.ts || 1, st = s.leg.at(e / ts), p = s.leg.pos(st.s); x = p.x; y = p.y; speed = st.v / ts; accel = st.a; heading = s.leg.head(st.s); travelled = s.base + st.s * ts; leg = s.leg; legS = st.s;
       const toEnd = s.leg.total - st.s;
       if (speed < 0.03 && e < 1.5) phase = 'Starting'; else if (s.leg.dockEnd && toEnd < ph.dockM + 0.25 && speed <= ph.dockMps + 0.08) phase = 'Docking slowly';
       else if (accel > 0.05) phase = 'Accelerating'; else if (accel < -0.05) phase = s.leg.cornerAhead(st.s, 4) ? 'Slowing for a turn' : 'Braking';
@@ -185,13 +186,16 @@
       if (s.kind === 'out') waiting = true;
     } else if (s.kind === 'pivot') {
       x = s.x; y = s.y; heading = s.hd0 + (s.hd1 - s.hd0) * smooth(e / dur); phase = Math.round(Math.abs(s.hd1 - s.hd0) * 180 / Math.PI) + '° turn'; waiting = !s.laden && s.stage === 'start';
+    } else if (STILL[s.kind]) {   // standing: waiting for a door or an obstacle, charging, a battery swap, nothing to do
+      x = s.x; y = s.y; heading = s.hd; laden = !!s.laden; lift = laden ? 1 : 0; phase = s.phase || '';
     } else {
       x = s.x; y = s.y; heading = s.hd;
       if (s.kind === 'load') { const a = ph.settleS, b = a + m.liftS; lift = smooth((e - a) / m.liftS); laden = e > a; waiting = e <= a; phase = e < a ? 'Forks in position' : e < b ? 'Lifting ' + Math.round(lift * m.liftMm) + ' mm' : 'Pallet secured'; }
       else { const a = ph.settleS, b = a + m.liftS; lift = 1 - smooth((e - a) / m.liftS); laden = e < b; phase = e < a ? 'Forks in position' : e < b ? 'Lowering ' + Math.round(lift * m.liftMm) + ' mm' : 'Pallet released'; }
     }
-    return { x, y, heading, speed, accel, phase, laden, lift, kind: s.kind, label: LABEL[s.kind], travelled, job: s.job + 1, route: s.ri, jobT: t - job.t0, jobS: job.t1 - job.t0, jobDistanceM: job.distanceM, done: m.jobs.filter(j => j.t1 <= t + 1e-9).length, t, there: !!THERE[s.kind], atKind: s.kind, waiting, jobRef: job, leg, legS };
+    return { x, y, heading, speed, accel, phase, laden, lift, kind: s.kind, label: s.label || LABEL[s.kind], travelled, job: s.job + 1, route: s.ri, jobT: t - job.t0, jobS: job.t1 - job.t0, jobDistanceM: job.distanceM, done: m.jobs.filter(j => !j.service && j.t1 <= t + 1e-9).length, t, there: !!THERE[s.kind], atKind: s.kind, waiting, jobRef: job, leg, legS, seg: s };
   }
+  const STILL = { wait: 1, charge: 1, swap: 1, idle: 1 };
 
   // one row per route, for the readings: how far, how long (the proposal's formula and what the machine really takes)
   function table(m) { return m.routes.map((R, i) => ({ i, id: R.id, label: R.label, distanceM: R.distanceM, cycleS: R.cycleS, simS: R.simS, driveS: R.driveS, farthest: i === m.far })); }
@@ -199,6 +203,6 @@
   // make sure the first n jobs are on the timeline and say when the n-th ends
   function jobsUntil(m, n) { while (m.jobs.length < n) { const job = addRouteJob(m, m.order[m.nextIx % m.order.length]); m.nextIx++; job.next = m.nextIx; } return m.jobs[n - 1].t1; }
 
-  const API = { build, at, call, reset, addTask, table, jobsUntil, makeLeg, LABEL, PHYS };
+  const API = { build, at, call, reset, addTask, table, jobsUntil, makeLeg, angDiff, LABEL, PHYS };
   if (typeof module !== 'undefined' && module.exports) module.exports = API; else root.WFCSim = API;
 })(typeof window !== 'undefined' ? window : globalThis);
