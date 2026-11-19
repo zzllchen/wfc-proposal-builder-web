@@ -100,6 +100,7 @@
           <div class="dview">
             <canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout"></canvas>
             <p id="viewHint" class="vhint" hidden></p>
+            <div id="vCard" class="vcard" hidden aria-live="polite"></div>
             <div class="vtools" id="vTools">
 <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
 <button id="simReset" type="button" class="btn ghost" hidden title="Back to the standard angle (R)">Reset view</button>
@@ -114,7 +115,7 @@
             <div class="dleg"><span><i style="background:#2F5BD0"></i>Working</span><span><i style="background:#E3A21A"></i>Waiting (door, obstacle)</span><span><i style="background:#1E8A55"></i>Charging</span><span><i style="background:#C6CFE2"></i>Idle</span><em class="dtlhint">Click or drag the timeline to jump</em></div>
           </div>
         </div>
-        <aside class="dcol dright" aria-label="Production lines"><section class="pcard" id="pLines"></section></aside>
+        <aside class="dcol dright" aria-label="Production lines"><section class="pcard" id="pQueue"></section><section class="pcard" id="pLines"></section></aside>
       </div>
       <div id="simMsg" hidden></div>
       <p id="simHint" class="simhint">Turn your phone sideways for a bigger picture.</p>

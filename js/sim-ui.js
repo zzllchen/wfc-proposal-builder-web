@@ -648,10 +648,25 @@
       const label = act ? 'Collecting' : st.waiting ? (st.waiting > 1 ? `${st.waiting} ready` : 'Ready') : st.producing ? 'Making' : 'Idle', cls = act ? 'col' : st.waiting ? 'rdy' : st.producing ? '' : 'idle';
       return `<li class="lr${act ? ' act' : ''}" data-li="${Lx.li}" title="Click to look at this line in the picture"><i class="tag">${esc(Lx.tag)}</i><span class="nm">${esc(Lx.name)}</span><span class="lbar"><i class="${st.waiting ? 'rdy' : ''}" style="width:${w.toFixed(0)}%"></i></span><span class="stt ${cls}">${label}</span></li>`;
     }).join('');
-    const qhtml = q.length ? `<div class="qrow">${q.slice(0, 4).map(p => `<span class="qchip"><i class="tag">${esc(ops.lines[p.li].tag)}</i>${mm(tt - p.tCall)}</span>`).join('')}<small>time waited</small></div>` : `<div class="qnone">The AMR has caught up</div>`;
+    const qhtml = q.length ? `<div class="qrow">${q.slice(0, 3).map(p => `<span class="qchip"><i class="tag">${esc(ops.lines[p.li].tag)}</i>${mm(tt - p.tCall)}</span>`).join('')}<small>${q.length > 3 ? `+${q.length - 3} more` : 'time waited'}</small></div>` : `<div class="qnone">The AMR has caught up</div>`;
+    put('pQueue', `<div class="qhead"><span class="plabel">Waiting for pickup</span><b>${q.length ? `${q.length} ${q.length === 1 ? 'pallet' : 'pallets'}` : 'none'}</b></div>${qhtml}`);
     put('pLines', `<div class="plabel">Production lines</div><p class="lsub">Each line packs a pallet every ${fmt(cfg.intervalMin)} min</p>`
-      + `<div class="lcap"><span>Line</span><span></span><span>Progress</span><span>Status</span></div><ul class="llist">${rows}</ul>`
-      + `<div class="qbox"><div class="qhead"><span>Waiting for pickup</span><b>${q.length ? `${q.length} ${q.length === 1 ? 'pallet' : 'pallets'}` : 'none'}</b></div>${qhtml}</div>`);
+      + `<div class="lcap"><span>Line</span><span></span><span>Progress</span><span>Status</span></div><ul class="llist">${rows}</ul>`);
+  }
+  // the card for what was picked (the AMR, a door, a line): real HTML over the picture, so its close button works and its text is crisp at any size
+  let cardKey = '';
+  function updateCard(info) {
+    const el = $('#vCard'); if (!el) return;
+    if (!info || !picked) { if (!el.hidden) el.hidden = true; cardKey = ''; return; }
+    const key = picked.kind + ':' + picked.id;
+    if (key !== cardKey || el.hidden) {
+      cardKey = key; el.hidden = false; el.dataset.sig = '';
+      el.innerHTML = '<div class="vc-head"><i class="vc-dot"></i><div class="vc-tt"><h4></h4><p></p></div><button type="button" class="vc-x" data-close aria-label="Close and go back to the overview" title="Close (Esc)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>'
+        + '<dl class="vc-rows">' + info.rows.map(() => '<div><dt></dt><dd></dd></div>').join('') + '</dl><button type="button" class="vc-back" data-close>Back to overview</button>';
+    }
+    const sig = JSON.stringify([info.title, info.sub, info.col, info.rows]); if (el.dataset.sig === sig) return; el.dataset.sig = sig;
+    el.querySelector('h4').textContent = info.title; el.querySelector('p').textContent = info.sub; el.querySelector('.vc-dot').style.background = info.col;
+    el.querySelectorAll('.vc-rows > div').forEach((r, i) => { r.firstChild.textContent = info.rows[i][0]; r.lastChild.textContent = info.rows[i][1]; });
   }
   function focusLine(li) {
     const L = ops && ops.lines.find(q => q.li === li); if (!L) return;
@@ -679,8 +694,7 @@
     sts.forEach((s, i) => { drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')); picks.push({ kind: 'amr', id: i, wx: s.x, wy: s.y, wz: 0.7 * VIZ, r: 64 }); });
     const boxes = scene, labels = deferred; scene = null; deferred = null; paintParts(boxes); labels.forEach(f => f());
     ctx.restore();
-    if (dash) { hits = []; drawOverlays(); updatePanels(tt, sts); } else { drawCloseup(s0); drawHudOps(tt, sts); }
-    drawInspector(info);
+    if (dash) { hits = []; cardHits = []; drawOverlays(); updatePanels(tt, sts); updateCard(info); } else { drawCloseup(s0); drawHudOps(tt, sts); drawInspector(info); }
   }
 
   /* ---------- the picture ---------- */
@@ -1084,6 +1098,7 @@
     if (inited) return; inited = true;
     cv = $('#simCv'); ctx = cv.getContext('2d'); speedF = speedOf[mode];
     applyLayout(); if (window.ResizeObserver) { const ro = new ResizeObserver(() => { if (dash) fitView(); }); ro.observe($('.dview')); }
+    $('#vCard').addEventListener('click', e => { if (e.target.closest('[data-close]')) resetView(); });
     $('#pLines').addEventListener('click', e => { const r = e.target.closest('[data-li]'); if (r) focusLine(+r.dataset.li); });
     $('#pAmr').addEventListener('click', focusAmr);
     const tlEl = $('#simTl'); let tlDrag = false, tlId = -1;
