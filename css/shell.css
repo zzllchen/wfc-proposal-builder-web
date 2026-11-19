@@ -872,3 +872,13 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
 .vtools { align-items: center; }
 .vtools .seg { min-height: 0; height: 34px; padding: 3px; gap: 2px; align-items: stretch; border-radius: 12px; }
 .vtools .seg .tab { height: auto; min-height: 0; padding: 0 12px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; border-radius: 9px; }
+
+/* the open-proposals bar can be hidden for more room (the choice is remembered): the top bar then has a Proposals button that brings it back */
+#docsHide { margin-left: auto; flex: none; width: 36px; height: 36px; min-height: 36px; padding: 0; justify-content: center; }
+#docsShow[hidden] { display: none; }
+#docsShow { flex: none; max-width: 230px; }
+#docsShow .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+#app.docs-closed { grid-template-rows: 64px 0px minmax(0, 1fr); }
+#app.docs-closed #docs { display: none; }
+/* on a tablet or phone the bar stays (the top bar has no room for the button, and the bar is slim there) */
+@media (max-width: 900px) { #docsHide, #docsShow { display: none !important; } #app.docs-closed { grid-template-rows: auto auto minmax(0, 1fr) auto; } #app.docs-closed #docs { display: flex; } }

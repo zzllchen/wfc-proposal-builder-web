@@ -29,6 +29,7 @@
       <button class="tab" disabled aria-disabled="true" title="Coming soon">Quotation <span class="soon">Soon</span></button>
     </nav>
     <div class="sp"></div>
+    <button id="docsShow" type="button" class="btn quiet" hidden title="Show the proposal tabs" aria-label="Show the proposal tabs"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="lbl" id="docsShowName">Proposals</span></button>
     <span id="saveHint" class="savestate" data-state="saved" role="status" aria-live="polite" title="Your work is saved automatically on this device">Saved</span>
     <button id="connBtn" class="btn conn quiet" title="Connect Claude and Google AI"></button>
     <details id="fileMenu" class="menu">
@@ -39,6 +40,7 @@
         <button id="btnPptx" data-act="pptx" title="Each slide is a picture; the slide text is in the speaker notes">Save as PowerPoint</button>
         <hr>
         <button data-act="dup">Duplicate this proposal</button>
+        <button data-act="new">New proposal…</button>
       </div>
     </details>
     <button id="btnPdf" class="btn primary" title="Download the proposal as a PDF"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span><span class="lbl-l">Download </span>PDF</span></button>
@@ -54,6 +56,7 @@
         <button data-new="open">Open project…</button>
       </div>
     </details>
+    <button id="docsHide" type="button" class="btn quiet" title="Hide this bar to make more room (the Proposals button in the top bar brings it back)" aria-label="Hide the proposal tabs"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button>
   </div>
   <aside id="side" aria-label="Proposal details"></aside>
   <main id="work">

@@ -12,7 +12,27 @@
     if (p === 'preview' && window.WFCApp) requestAnimationFrame(() => WFCApp.flush());   // the slide is sized to the space it has, which was zero while hidden
   }
 
+  // the bar of open proposals can be hidden for more room; the choice is remembered on this PC
+  const DOCS_KEY = 'wfc-proposal-docs-closed';
+  function docsName() { const n = $('#docTabs .doctab.active .dn'), l = $('#docsShowName'); if (l) l.textContent = (n && n.textContent.trim()) || 'Proposals'; }
+  function setDocs(open) {
+    const app = $('#app'); if (!app) return;
+    app.classList.toggle('docs-closed', !open); const show = $('#docsShow'); if (show) show.hidden = open;
+    try { localStorage.setItem(DOCS_KEY, open ? '0' : '1'); } catch (e) { /* private mode */ }
+    docsName(); requestAnimationFrame(() => { window.dispatchEvent(new Event('resize')); if (window.WFCApp) WFCApp.flush(); });   // the slide and the simulation take the room
+  }
+  function initDocs() {
+    let closed = false; try { closed = localStorage.getItem(DOCS_KEY) === '1'; } catch (e) { /* first visit */ }
+    const hide = $('#docsHide'), show = $('#docsShow'), tabs = $('#docTabs');
+    if (hide) hide.addEventListener('click', () => setDocs(false));
+    if (show) show.addEventListener('click', () => setDocs(true));
+    document.addEventListener('click', e => { const b = e.target.closest('#fileMenu [data-act="new"]'); if (!b) return; const f = $('#fileMenu'); if (f) f.open = false; setDocs(true); const m = $('#newMenu'); if (m) m.open = true; });
+    if (tabs && window.MutationObserver) new MutationObserver(docsName).observe(tabs, { childList: true, subtree: true, characterData: true });
+    setDocs(!closed);
+  }
+
   function init() {
+    initDocs();
     const nav = $('#mobileNav'); if (!nav) return;
     nav.addEventListener('click', e => { const b = e.target.closest('[data-pane]'); if (b) setPane(b.dataset.pane); });
     // things that only make sense with the preview showing switch to it by themselves on a small screen
