@@ -14,10 +14,12 @@
   let cv, ctx, S, D, model, img = null, imgSrc = '', t = 0, playing = true, speedF = 8, view = '3d', last = 0, raf = 0, recState = null, cam = null, inited = false;
   let hover = null, toast = null, hits = [], clockOverride = null, rows = [], dots = [], vz = VIZ;   // vz: how much bigger than life the AMR is drawn (the close-up draws it life size)
   // the 3D camera: drag to turn (az) and tilt (elev), scroll to zoom; the standard view is the isometric one
-  const AZ0 = Math.PI / 4, ELEV0 = Math.asin(1 / Math.sqrt(3)), ELEV_MIN = 0.3, ELEV_MAX = 1.5;
-  let az = AZ0, elev = ELEV0, zoom = 1, orb = null, camMemo = null;
-  const camTag = () => [view, az.toFixed(3), elev.toFixed(3), zoom.toFixed(3)].join(',');
-  const viewMoved = () => Math.abs(az - AZ0) > 1e-3 || Math.abs(elev - ELEV0) > 1e-3 || Math.abs(zoom - 1) > 1e-3;
+  const AZ0 = Math.PI / 4, ELEV0 = Math.asin(1 / Math.sqrt(3)), ELEV_MIN = 0.3, ELEV_MAX = 1.5, SPIN = 0.28;   // SPIN: radians a second for the 360 view (about 22 s a turn)
+  let az = AZ0, elev = ELEV0, zoom = 1, pan = { x: 0, y: 0 }, orb = null, camMemo = null;   // the camera now; pan is the look-at point, in metres from the layout's centre
+  let gl = { az: AZ0, elev: ELEV0, zoom: 1, px: 0, py: 0 }, spin = false, follow = null, picked = null, picks = [], cardHits = [];   // gl: where the camera is flying to
+  const camTag = () => [view, az.toFixed(3), elev.toFixed(3), zoom.toFixed(3), pan.x.toFixed(2), pan.y.toFixed(2)].join(',');
+  const viewMoved = () => Math.abs(az - AZ0) > 1e-3 || Math.abs(elev - ELEV0) > 1e-3 || Math.abs(zoom - 1) > 1e-3 || Math.abs(pan.x) > 1e-3 || Math.abs(pan.y) > 1e-3 || spin || !!picked || follow !== null;
+  const clampV = (v, a, b) => Math.max(a, Math.min(b, v));
   let task = null, taskPts = [];                                                                     // task: the point-to-point run on screen (null = the longest route, trip after trip)
   // the shift simulation (js/ops.js): mode 'shift' plays a whole shift with every line, the queue, charging, doors and obstacles; mode 'trip' is one trip at a time
   let mode = 'shift', ops = null, opsAll = null, opsModel = null, opsSig = '', obsSince = {}, placing = false, selObs = null, dragObs = null, sheetOpen = '', unit = 'km';
@@ -46,21 +48,26 @@
 
   /* ---------- the camera: fit the whole layout into the picture ---------- */
   // the picture of the layout stays inside its own area, even when zoomed in (the cards and counters are never drawn over)
-  const clipWorld = () => { ctx.beginPath(); ctx.rect(50, 150, 1360, 800); ctx.clip(); };
-  function camera() {
-    const k = model.k, asp = model.aspect, iso = view === '3d', box = MAP, h = k / asp, key = [camTag(), k, asp].join('|');
-    if (camMemo && camMemo.key === key) return camMemo.cam;
-    const K = C30 * Math.SQRT2, sE = Math.sin(elev), cE = Math.cos(elev);
+  const clipWorld = () => { rr(ctx, 50, 150, 1360, 800, 26); ctx.clip(); };
+  const camera = () => {
+    const key = [camTag(), model.k, model.aspect].join('|');
+    if (!camMemo || camMemo.key !== key) camMemo = { key, cam: buildCam({ az, elev, zoom, px: pan.x, py: pan.y }) };
+    return camMemo.cam;
+  };
+  // the camera for a given state (the one on screen, or the one it is flying to): an orthographic view that looks at the point (px, py) from the layout's centre
+  function buildCam(st) {
+    const k = model.k, asp = model.aspect, iso = view === '3d', box = MAP, h = k / asp;
+    const K = C30 * Math.SQRT2, sE = Math.sin(st.elev), cE = Math.cos(st.elev);
     const proj = a => { const sA = Math.sin(a), cA = Math.cos(a); return (x, y, z) => iso ? [K * (x * sA - y * cA), K * sE * (x * cA + y * sA) - K * cE * (z || 0)] : [x, y]; };
     const extent = pr => { const cs = [pr(0, 0, 0), pr(k, 0, 0), pr(k, h, 0), pr(0, h, 0), pr(0, 0, 6)]; return { x0: Math.min(...cs.map(c => c[0])), x1: Math.max(...cs.map(c => c[0])), y0: Math.min(...cs.map(c => c[1])), y1: Math.max(...cs.map(c => c[1])) }; };
-    const pr = proj(az), b = extent(pr), fit = e => Math.min(box.w / (e.x1 - e.x0), box.h / (e.y1 - e.y0));
+    const pr = proj(st.az), b = extent(pr), fit = e => Math.min(box.w / (e.x1 - e.x0), box.h / (e.y1 - e.y0));
     let sc = fit(b);
     if (iso) for (let a = 0; a < Math.PI; a += Math.PI / 18) sc = Math.min(sc, fit(extent(proj(a))));   // the size of the worst angle, so turning the view never makes the layout grow or shrink
-    sc *= zoom;
-    const ox = box.x + (box.w - (b.x1 - b.x0) * sc) / 2 - b.x0 * sc, oy = box.y + (box.h - (b.y1 - b.y0) * sc) / 2 - b.y0 * sc;
+    sc *= st.zoom;
+    const c0 = pr(k / 2, h / 2, 0), ct = pr(k / 2 + st.px, h / 2 + st.py, 0);   // the look-at point lands where the layout's centre does when nothing is zoomed on
+    const ox = box.x + (box.w - (b.x1 - b.x0) * sc) / 2 - b.x0 * sc + (c0[0] - ct[0]) * sc, oy = box.y + (box.h - (b.y1 - b.y0) * sc) / 2 - b.y0 * sc + (c0[1] - ct[1]) * sc;
     const P = (x, y, z) => { const q = pr(x, y, z); return [ox + q[0] * sc, oy + q[1] * sc]; }, o0 = P(0, 0, 0), ex = P(1, 0, 0), ey = P(0, 1, 0);
-    const c = { iso, sc, ox, oy, az, elev, sqr: iso ? sE / 0.57735 : 1, dir: iso ? [Math.cos(az), Math.sin(az)] : [Math.SQRT1_2, Math.SQRT1_2], ex: [ex[0] - o0[0], ex[1] - o0[1]], ey: [ey[0] - o0[0], ey[1] - o0[1]], P };
-    camMemo = { key, cam: c }; return c;
+    return { iso, sc, ox, oy, az: st.az, elev: st.elev, sqr: iso ? sE / 0.57735 : 1, dir: iso ? [Math.cos(st.az), Math.sin(st.az)] : [Math.SQRT1_2, Math.SQRT1_2], ex: [ex[0] - o0[0], ex[1] - o0[1]], ey: [ey[0] - o0[0], ey[1] - o0[1]], P };
   }
 
   /* ---------- the world (drawn once, then copied each frame) ---------- */
@@ -80,7 +87,7 @@
     ctx.fillStyle = '#F2F5FB'; ctx.fillRect(0, 0, W, H);
     if (img && img.complete && img.naturalWidth) {
       const s = k / img.naturalWidth;
-      ctx.setTransform(s * cam.ex[0], s * cam.ex[1], s * cam.ey[0], s * cam.ey[1], c[0][0], c[0][1]); ctx.drawImage(img, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.setTransform(s * cam.ex[0], s * cam.ex[1], s * cam.ey[0], s * cam.ey[1], c[0][0], c[0][1]); ctx.drawImage(img, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.beginPath(); c.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill();   // calm the picture so the routes stand out
     }
     ctx.restore();
@@ -365,6 +372,7 @@
     opsLines().forEach(L => {
       const st = lineState(L, tt), c = Math.cos(L.hd), sn = Math.sin(L.hd), px = L.pick.x + c * 0.47 * VIZ, py = L.pick.y + sn * 0.47 * VIZ, nx = -sn, ny = c;
       const parts = [], g = toScreen(px, py, 0), lit = st.waiting > 0;
+      picks.push({ kind: 'line', id: L.li, wx: px, wy: py, wz: 0.3 * VIZ, r: 46 });
       if (lit) { const ph = (wall() * 1.2) % 1; ctx.save(); ctx.strokeStyle = `rgba(227,162,26,${0.5 - ph * 0.45})`; ctx.fillStyle = `rgba(227,162,26,${0.10 - ph * 0.08})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + ph * 14, ((cam.iso ? 18 * SQ() : 30)) + ph * 9, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
       // the pallet at the line: being packed (the crate grows), or finished and waiting (full, lit); more waiting pallets stand beside it
       const crate = lit ? 0.54 : Math.max(0.06, st.prog * 0.54), base2 = { x: px, y: py, heading: L.hd };
@@ -399,6 +407,7 @@
   }
   function drawDoors(tt) {
     (ops ? ops.doors : []).forEach(d => {
+      picks.push({ kind: 'door', id: d.id, wx: d.x, wy: d.y, wz: 0.85 * VIZ, r: 54 });
       const st = doorState(d, tt), Wd = 1.5 * VIZ, Hd = 1.7 * VIZ, s0 = { x: d.x, y: d.y, heading: d.ang }, nx = -Math.sin(d.ang), ny = Math.cos(d.ang), parts = [];
       const post = k => { const q = { x: d.x + nx * Wd / 2 * k, y: d.y + ny * Wd / 2 * k, heading: d.ang }; return part(Object.assign(q), -0.05, 0.05, -0.05, 0.05, 0, (Hd + 0.4 * VIZ) / VIZ, ['#5B6577', '#3A4559']); };
       parts.push(post(-1), post(1));
@@ -517,12 +526,14 @@
     }
     cam = camera(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stat, 0, 0);
     const sts = ops.amrs.map(a => Sim.at(a.model, tt)), s0 = sts[0], j0 = s0.jobRef, serving = j0 && !j0.service && j0.pallet !== undefined ? ops.pallets.find(p => p.id === j0.pallet).li : -1;
+    picks = []; const info = selInfo(tt, sts, serving);
     ctx.save(); clipWorld();
+    drawFocus(info);
     sts.forEach((s, i) => { if (s.jobRef && !s.jobRef.service) drawProgress(s, ops.amrs[i].model); });
     drawLines(tt, serving); drawDoors(tt); drawObstacles(tt);
-    sts.forEach((s, i) => drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')));
+    sts.forEach((s, i) => { drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')); picks.push({ kind: 'amr', id: i, wx: s.x, wy: s.y, wz: 0.7 * VIZ, r: 64 }); });
     ctx.restore();
-    drawCloseup(s0); drawHudOps(tt, sts);
+    drawCloseup(s0); drawHudOps(tt, sts); drawInspector(info);
   }
 
   /* ---------- the picture ---------- */
@@ -553,7 +564,7 @@
       if (recState && t >= recState.end) { t = recState.end - 1e-3; frame(t); finishRecording(); return; }
       if (mode === 'shift' && ops && t >= ops.Hend) { t = ops.Hend; playing = false; ui(); }
     }
-    if (model && model.ok) { frame(t); if (recState) setNote(`Recording… ${Math.max(0, Math.ceil((recState.end - t) / speedF))} s left. Keep this tab open.`); }
+    if (model && model.ok) { stepCam(dt); frame(t); if (recState) setNote(`Recording… ${Math.max(0, Math.ceil((recState.end - t) / speedF))} s left. Keep this tab open.`); }
   }
 
   /* ---------- the model from the proposal ---------- */
@@ -683,14 +694,90 @@
       if (e.clientY > r.bottom - 96 || (e.target.closest && e.target.closest('.simbar'))) showBar(); else if (el.classList.contains('showbar')) { clearTimeout(idleT); idleT = setTimeout(hideBar, 500); }
     }
   }
-  // the view: "Reset view" shows only when the picture has been turned, tilted or zoomed
-  function viewUi() { const b = $('#simReset'); if (b) b.hidden = !viewMoved() || !model || !model.ok; }
-  function resetView() { az = AZ0; elev = ELEV0; zoom = 1; viewUi(); }
+  // the camera controls: "Reset view" shows only when the picture has been turned, tilted, zoomed, moved or pointed at something
+  function viewUi() {
+    const ok = model && model.ok, b = $('#simReset'), sp = $('#simSpin');
+    if (b) b.hidden = !viewMoved() || !ok;
+    if (sp) { sp.hidden = !ok; sp.classList.toggle('active', spin); sp.setAttribute('aria-pressed', String(spin)); }
+  }
+  function resetView() { gl = { az: AZ0, elev: ELEV0, zoom: 1, px: 0, py: 0 }; picked = null; follow = null; spin = false; ui(); }
+  function toggleSpin() {
+    if (spin) { spin = false; gl.az = az; ui(); return; }
+    spin = true; follow = null; picked = null; gl.px = 0; gl.py = 0; gl.zoom = 1; gl.elev = 0.72; if (view !== '3d') view = '3d'; ui();
+  }
+  // each frame the camera moves a little toward where it is going (a smooth fly-in), follows the AMR that is picked, or keeps turning in the 360 view
+  function stepCam(dt) {
+    if (!model || !model.ok) return;
+    const k = model.k, hh = k / model.aspect;
+    if (follow !== null && mode === 'shift' && ops && ops.amrs[follow]) { const s = Sim.at(ops.amrs[follow].model, Math.min(t, ops.Hend)); gl.px = clampV(s.x - k / 2, -k / 2, k / 2); gl.py = clampV(s.y - hh / 2, -hh / 2, hh / 2); }
+    const f = 1 - Math.exp(-Math.min(dt, 0.1) * 6), near = (a, b, e) => Math.abs(a - b) < e;
+    if (spin) { az += SPIN * Math.min(dt, 0.1); gl.az = az; }
+    else { const da = Math.atan2(Math.sin(gl.az - az), Math.cos(gl.az - az)); az += near(da, 0, 1e-4) ? da : da * f; }
+    elev = near(gl.elev, elev, 1e-4) ? gl.elev : elev + (gl.elev - elev) * f;
+    zoom = near(gl.zoom, zoom, 1e-4) ? gl.zoom : zoom * Math.exp(Math.log(gl.zoom / zoom) * f);
+    pan.x = near(gl.px, pan.x, 1e-3) ? gl.px : pan.x + (gl.px - pan.x) * f; pan.y = near(gl.py, pan.y, 1e-3) ? gl.py : pan.y + (gl.py - pan.y) * f;
+  }
+  // click the AMR, a door or a line's pallet: the camera flies in on it and a card says what it is doing
+  function focusOn(h) {
+    if (!model || !model.ok) return;
+    const k = model.k, hh = k / model.aspect;
+    picked = { kind: h.kind, id: h.id }; spin = false; follow = h.kind === 'amr' ? h.id : null;
+    gl.px = clampV(h.wx - k / 2, -k / 2, k / 2); gl.py = clampV(h.wy - hh / 2, -hh / 2, hh / 2);
+    gl.zoom = h.kind === 'door' ? 3.2 : 3.6; if (view === '3d' && (gl.elev < 0.5 || gl.elev > 1.0)) gl.elev = 0.68;
+    ui();
+  }
+  function pickAt(p) {
+    if (mode !== 'shift' || !ops || !picks.length) return null;
+    const c = camera(); let best = null;
+    picks.forEach(h => { const g = c.P(h.wx, h.wy, h.wz), r = h.r * Math.pow(Math.max(zoom, 1), 0.7), d = Math.hypot(p.x - g[0], p.y - g[1]); if (d <= r) { const sc = d / r - (h.kind === 'amr' ? 0.6 : 0); if (!best || sc < best.sc) best = Object.assign({ sc }, h); } });
+    return best;
+  }
+  // what the card says about the thing that was picked
+  function selInfo(tt, sts, serving) {
+    if (!picked || !ops) return null;
+    if (picked.kind === 'amr') {
+      const a = ops.amrs[picked.id], s = sts[picked.id]; if (!a || !s) { picked = null; follow = null; return null; }
+      const bat = OPS.valueAt(a.batPts, tt, true), moved = ops.pallets.filter(q => q.amr === a.id && q.tDrop !== null && q.tDrop <= tt).length;
+      return { pos: [s.x, s.y], title: 'AMR ' + String(picked.id + 1).padStart(2, '0'), sub: (s.label || '') + (s.phase ? ' · ' + s.phase : ''), col: KIND[s.kind] || SLATE, rm: 4.4,
+        rows: [['Speed', `${fmt(s.speed, 2)} m/s`], ['Battery', `${fmt(bat * 100)}%`], ['Carrying', s.laden ? 'A pallet' : 'Nothing'], ['Delivered so far', `${moved} ${moved === 1 ? 'pallet' : 'pallets'}`]] };
+    }
+    if (picked.kind === 'door') {
+      const d = ops.doors.find(q => q.id === picked.id); if (!d) { picked = null; return null; }
+      const st = doorState(d, tt), n = d.cycles.filter(c => c.o0 <= tt).length, cfg = ops.cfg;
+      return { pos: [d.x, d.y], title: 'Roll-up door', sub: st.label, col: st.col, rm: 4.6,
+        rows: [['Opened so far', `${n} ${n === 1 ? 'time' : 'times'}`], ['Opening takes', `${fmt(cfg.doorOpenS)} s`], ['Closing takes', `${fmt(cfg.doorCloseS)} s`], ['Held open for', `${fmt(cfg.doorHoldS)} s after the AMR`]] };
+    }
+    const L = ops.lines.find(q => q.li === picked.id); if (!L) { picked = null; return null; }
+    const st = lineState(L, tt), made = L.pallets.filter(q => q.tFinish <= tt).length, next = L.pallets.find(q => q.tFinish > tt), w = L.pallets.find(q => q.tCall <= tt && (q.tAssign === null || q.tAssign > tt)), c = Math.cos(L.hd), sn = Math.sin(L.hd);
+    return { pos: [L.pick.x + c * 0.47 * VIZ, L.pick.y + sn * 0.47 * VIZ], title: L.name, sub: L.li === serving ? 'Collecting: the AMR is on its way or loading' : st.waiting ? 'A pallet is ready for pickup' : st.producing ? 'Packing a pallet' : 'Nothing being packed', col: L.li === serving ? BLUE : st.waiting ? AMBER : '#9AA6BC', rm: 3.4,
+      rows: [['Pallet', st.waiting ? `${st.waiting} ready` : st.producing ? `${Math.round(st.prog * 100)}% packed` : 'None'], ['Waiting for pickup', w ? mm(tt - w.tCall) : '—'], ['Made so far', String(made)], ['Next pallet', next ? 'in ' + mm(next.tFinish - tt) : 'none left']] };
+  }
+  // the spotlight: the layout dims a little round what was picked, which gets a soft pulsing ring
+  function drawFocus(info) {
+    if (!info) return;
+    const a = cam.P(info.pos[0], info.pos[1], 0), g = ctx.createRadialGradient(a[0], a[1], 130, a[0], a[1], 620); g.addColorStop(0, 'rgba(14,22,48,0)'); g.addColorStop(1, 'rgba(14,22,48,.28)');
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(50, 150, 1360, 800); ctx.restore();   // (inside the rounded clip)
+    const ph = (wall() * 0.9) % 1, rx = info.rm * cam.sc * (1 + ph * 0.1);
+    ctx.save(); ctx.strokeStyle = `rgba(47,91,208,${0.85 - ph * 0.6})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(a[0], a[1], rx, rx * (cam.iso ? 0.58 * SQ() : 1), 0, 0, 7); ctx.stroke(); ctx.restore();
+  }
+  function drawInspector(info) {
+    cardHits = []; if (!info) return;
+    const x = MAP.x + 14, y = MAP.y + 14, w = 350, h = 112 + info.rows.length * 30 + 60;
+    card(x, y, w, h);
+    ctx.save(); ctx.fillStyle = info.col; ctx.beginPath(); ctx.arc(x + 36, y + 40, 9, 0, 7); ctx.fill(); ctx.restore();
+    fitTxt(info.title, x + 58, y + 49, w - 58 - 62, 26, 700, INK); fitTxt(info.sub, x + 28, y + 84, w - 56, 18, 500, MUTE);
+    ctx.save(); ctx.strokeStyle = MUTE; ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x + w - 40, y + 30); ctx.lineTo(x + w - 24, y + 46); ctx.moveTo(x + w - 24, y + 30); ctx.lineTo(x + w - 40, y + 46); ctx.stroke(); ctx.restore();
+    info.rows.forEach((r, i) => { const yy = y + 130 + i * 30; ctx.save(); ctx.fillStyle = 'rgba(11,18,32,.07)'; ctx.fillRect(x + 28, yy - 22, w - 56, 1); ctx.restore(); txt(r[0], x + 28, yy, 17, 500, MUTE); fitTxt(r[1], x + w - 28, yy, w - 56 - 130, 18, 700, INK, 'right'); });
+    const bx = x + 24, by = y + h - 52, bw = w - 48;
+    ctx.save(); ctx.fillStyle = 'rgba(47,91,208,.10)'; rr(ctx, bx, by, bw, 36, 18); ctx.fill(); ctx.restore(); txt('Back to overview', bx + bw / 2, by + 24.5, 17, 700, BLUE, 'center');
+    cardHits = [{ x: bx, y: by, w: bw, h: 36 }, { x: x + w - 58, y: y + 14, w: 46, h: 46 }];
+  }
   const typing = e => { const t = e.target; return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); };
   function onKey(e) {
     if (document.body.dataset.tab !== 'sim' || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'f' || e.key === 'F') { present(!presenting); e.preventDefault(); }
     else if (e.key === 'r' || e.key === 'R') { resetView(); e.preventDefault(); }
+    else if (e.key === 'Escape' && (picked || follow !== null || spin)) { resetView(); e.preventDefault(); }
     else if (e.key === 'Escape' && presenting) { present(false); e.preventDefault(); }
     else if (e.key === 'Escape' && placing) { placing = false; ui(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && selObs && mode === 'shift') { removeObstacle(selObs); ui(); e.preventDefault(); }
@@ -727,6 +814,7 @@
   }
   // Run task needs two different points; until then the longest route keeps running
   function syncRun() { const a = $('#taskFrom'), b = $('#taskTo'), r = $('#taskRun'); if (!a || !b || !r) return; r.disabled = !(a.value && b.value && a.value !== b.value); r.title = r.disabled ? 'Choose where the AMR starts and where it ends. Without a choice it runs the longest route.' : ''; }
+  const inRect = (p, r) => p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
   const toCanvas = e => { const r = cv.getBoundingClientRect(), s = Math.min(r.width / W, r.height / H); return { x: (e.clientX - r.left - (r.width - W * s) / 2) / s, y: (e.clientY - r.top - (r.height - H * s) / 2) / s }; };
   function hitAt(p) {
     for (const h of hits) { if (h.w !== undefined ? (p.x >= h.x && p.x <= h.x + h.w && p.y >= h.y && p.y <= h.y + h.h) : Math.hypot(p.x - h.cx, p.y - h.cy) <= h.r) return { i: h.i, timeline: h.timeline, px: h.w !== undefined ? h.x - 10 : h.cx, py: h.w !== undefined ? h.y : h.cy }; }
@@ -736,10 +824,11 @@
   /* ---------- the shift settings: written into the proposal (S.sim), so they are saved with it ---------- */
   function setSim(k, v) { S.sim = Object.assign({}, S.sim || {}); if (v === undefined) delete S.sim[k]; else S.sim[k] = v; rebuildOps(); ui(); if (sheetOpen === 'results') renderSheet(); if (root.WFCApp) root.WFCApp.changed(); }
   // a point on the picture -> metres on the floor -> a fraction of the layout
-  function worldAt(p) {
-    const c = camera(), X = (p.x - c.ox) / c.sc, Y = (p.y - c.oy) / c.sc; if (!c.iso) return { x: X, y: Y };
+  function worldAtCam(c, p) {
+    const X = (p.x - c.ox) / c.sc, Y = (p.y - c.oy) / c.sc; if (!c.iso) return { x: X, y: Y };
     const K = C30 * Math.SQRT2, u = X / K, v = Y / (K * Math.sin(c.elev)), sA = Math.sin(c.az), cA = Math.cos(c.az); return { x: u * sA + v * cA, y: -u * cA + v * sA };
   }
+  function worldAt(p) { return worldAtCam(camera(), p); }
   const toPlan = w => ({ x: +(w.x / model.k).toFixed(4), y: +(w.y * model.aspect / model.k).toFixed(4) });
   function snapToRoute(w) {
     let best = null;
@@ -877,7 +966,7 @@
     cv.addEventListener('pointermove', e => {
       if (recState) return; const p = toCanvas(e);
       if (down) { if (Math.hypot(p.x - down.x0, p.y - down.y0) > 6) down.moved = true; if (down.moved) { const pl = toPlan(snapToRoute(worldAt(p))); dragObs = { id: down.id, x: pl.x, y: pl.y }; } return; }
-      if (mode === 'shift') { const h = hitAt(p); cv.style.cursor = placing ? 'crosshair' : obstacleAt(p) ? 'grab' : h && h.timeline ? 'pointer' : ''; return; }
+      if (mode === 'shift') { const h = hitAt(p); cv.style.cursor = placing ? 'crosshair' : obstacleAt(p) ? 'grab' : (h && h.timeline) || pickAt(p) || cardHits.some(r => inRect(p, r)) ? 'pointer' : ''; return; }
       hover = hitAt(p); cv.style.cursor = hover ? 'pointer' : 'default';
     });
     cv.addEventListener('pointerup', () => {
@@ -886,31 +975,43 @@
       else { selObs = d.id; dragObs = null; ui(); }
       cv.dataset.dragged = d.moved ? '1' : '';
     });
-    // turn the view: drag to turn and tilt (one finger sideways on a phone), scroll to zoom; "Reset view" or R goes back to the standard angle
+    // the camera: drag to turn and tilt (one finger sideways on a phone), right-drag or Shift-drag to move, scroll to zoom toward the pointer; click the AMR, a door or a
+    // pallet to fly in on it; "360° view" turns the whole layout; "Reset view" (or R, or Esc) goes back to the overview
     const inMap = p => p.x < 1430 && p.y > 130 && p.y < 960;
+    cv.addEventListener('contextmenu', e => e.preventDefault());
     cv.addEventListener('pointerdown', e => {
-      if (view !== '3d' || recState || placing || down || (e.pointerType === 'mouse' && e.button !== 0) || !inMap(toCanvas(e))) return;
-      orb = { id: e.pointerId, x: e.clientX, y: e.clientY, az0: az, el0: elev, moved: false, touch: e.pointerType === 'touch' };
+      if (recState || placing || down || !inMap(toCanvas(e))) return;
+      const mv = e.button === 1 || e.button === 2 || (e.button === 0 && e.shiftKey);
+      if (!mv && (e.button !== 0 || view !== '3d')) return;
+      const c0 = camera();
+      orb = { id: e.pointerId, x: e.clientX, y: e.clientY, az0: az, el0: elev, moved: false, touch: e.pointerType === 'touch', pan: mv, c0, w0: worldAtCam(c0, toCanvas(e)), p0: { x: pan.x, y: pan.y } };
       try { cv.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is already gone */ }
     });
     cv.addEventListener('pointermove', e => {
       if (!orb || e.pointerId !== orb.id) return;
       const dx = e.clientX - orb.x, dy = e.clientY - orb.y; if (!orb.moved && Math.hypot(dx, dy) < 5) return;
-      orb.moved = true; const k = W / Math.max(1, cv.getBoundingClientRect().width);   // canvas pixels per screen pixel
-      az = orb.az0 + dx * k * 0.0042;
-      if (!orb.touch || presenting) elev = Math.max(ELEV_MIN, Math.min(ELEV_MAX, orb.el0 + dy * k * 0.0035));
+      if (!orb.moved) { orb.moved = true; if (spin) { spin = false; gl.az = az; } if (orb.pan) follow = null; }
+      if (orb.pan) { const w = worldAtCam(orb.c0, toCanvas(e)), k = model.k, hh = k / model.aspect; pan.x = gl.px = clampV(orb.p0.x - (w.x - orb.w0.x), -k / 2, k / 2); pan.y = gl.py = clampV(orb.p0.y - (w.y - orb.w0.y), -hh / 2, hh / 2); }
+      else { const kk = W / Math.max(1, cv.getBoundingClientRect().width); az = gl.az = orb.az0 + dx * kk * 0.0042; if (!orb.touch || presenting) elev = gl.elev = clampV(orb.el0 + dy * kk * 0.0035, ELEV_MIN, ELEV_MAX); }
       cv.style.cursor = 'grabbing'; viewUi();
     });
     const endOrbit = e => { if (!orb || (e && e.pointerId !== orb.id)) return; if (orb.moved) cv.dataset.orbited = '1'; orb = null; cv.style.cursor = ''; };
     cv.addEventListener('pointerup', endOrbit); cv.addEventListener('pointercancel', endOrbit);
-    cv.addEventListener('wheel', e => { if (recState || !inMap(toCanvas(e))) return; e.preventDefault(); zoom = Math.max(0.6, Math.min(3, zoom * Math.exp(-e.deltaY * 0.0012))); viewUi(); }, { passive: false });
-    $('#simReset').addEventListener('click', resetView);
+    cv.addEventListener('wheel', e => {   // scroll up to zoom in, down to zoom out, toward the pointer (the point under it stays put)
+      if (recState || !model || !model.ok || !inMap(toCanvas(e))) return; e.preventDefault();
+      const nz = clampV(gl.zoom * Math.exp(-e.deltaY * 0.0014), 0.6, 8), fz = nz / gl.zoom;
+      if (follow === null && fz !== 1) { const w = worldAtCam(buildCam(gl), toCanvas(e)), k = model.k, hh = k / model.aspect; gl.px = clampV(gl.px + (w.x - (k / 2 + gl.px)) * (1 - 1 / fz), -k / 2, k / 2); gl.py = clampV(gl.py + (w.y - (hh / 2 + gl.py)) * (1 - 1 / fz), -hh / 2, hh / 2); }
+      gl.zoom = nz; viewUi();
+    }, { passive: false });
+    $('#simReset').addEventListener('click', resetView); $('#simSpin').addEventListener('click', toggleSpin);
     cv.addEventListener('mouseleave', () => { hover = null; });
     cv.addEventListener('click', e => {
       if (cv.dataset.orbited) { cv.dataset.orbited = ''; return; }   // that was a drag to turn the view, not a click
       const p = toCanvas(e);
       if (mode === 'shift') {
         if (cv.dataset.dragged) { cv.dataset.dragged = ''; return; }
+        if (cardHits.some(r => inRect(p, r))) { resetView(); return; }
+        if (!placing) { const pk = pickAt(p); if (pk) { focusOn(pk); return; } }
         if (placing) { addObstacle(p); ui(); return; }
         const h = hitAt(p); if (h && h.timeline && ops) { t = Math.max(0, Math.min(ops.Hend, (p.x - MAP.x) / MAP.w * ops.Hend)); return; }
         if (!obstacleAt(p) && selObs) { selObs = null; ui(); }
@@ -919,11 +1020,11 @@
       const h = hitAt(p); if (h && h.i !== undefined) callStation(h.i);
     });
     $('#simFull').addEventListener('click', () => present(!presenting));
-    cv.addEventListener('dblclick', e => { if (mode === 'shift' && obstacleAt(toCanvas(e))) return; present(!presenting); });
+    cv.addEventListener('dblclick', e => { if (mode === 'shift' && (obstacleAt(toCanvas(e)) || pickAt(toCanvas(e)) || cardHits.some(r => inRect(toCanvas(e), r)))) return; present(!presenting); });
     document.addEventListener('keydown', onKey);
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && presenting) present(false); });   // Esc in real full screen
     ['mousemove', 'pointerdown'].forEach(ev => simEl().addEventListener(ev, wake, { passive: true }));
-    const HINT = 'Drag the picture to turn it · scroll to zoom'; setNote(HINT); setTimeout(() => { const n = $('#simNote'); if (n && n.textContent === HINT) setNote(''); }, 9000);
+    const HINT = 'Click the AMR, a door or a pallet to zoom in · drag to turn · right-drag to move · scroll to zoom'; setNote(HINT); setTimeout(() => { const n = $('#simNote'); if (n && n.textContent === HINT) setNote(''); }, 9000);
     last = performance.now(); raf = requestAnimationFrame(loop);
   }
   // called by the app whenever the proposal changes while the tab is open (and when the tab opens)
@@ -934,6 +1035,9 @@
   }
   root.WFCSimUI = {
     update, frame: tt => { if (model && model.ok) frame(tt); },
+    tick: (dt, n) => { for (let i = 0; i < (n || 1); i++) { if (playing && model && model.ok) t += dt * speedF; if (model && model.ok) { stepCam(dt); frame(t); } } },   // advance by hand (for tests and recordings)
+    camera: () => ({ az, elev, zoom, pan: { x: pan.x, y: pan.y }, spin, follow, picked }),
+    picks: () => { const c = camera(); return picks.map(h => ({ kind: h.kind, id: h.id, at: c.P(h.wx, h.wy, h.wz).map(Math.round) })); },
     set: o => { if (o.t !== undefined) t = o.t; if (o.playing !== undefined) playing = o.playing; if (o.view) view = o.view; if (o.speed) speedF = o.speed; if (o.clock !== undefined) clockOverride = o.clock; ui(); },
     // the order the stations are served in, by station number (for a video); starts the timeline again
     setOrder: nums => { if (!model || !model.ok) return false; const idx = nums.map(n => rows.findIndex(r => String(r.num) === String(n))).filter(i => i >= 0); if (!idx.length) return false; task = null; fresh(); model.order = idx; model.nextIx = 0; return true; },
