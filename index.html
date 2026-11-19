@@ -87,7 +87,7 @@
         </div>
       </div>
       <div id="simStage" class="dash">
-        <header class="dhead"><div><h3 id="dTitle">A shift with the AMR</h3><p id="dSub"></p></div><span class="dnote">Simulated estimate based on the settings shown</span></header>
+        <header class="dhead"><p class="dline"><b id="dTitle">A shift with the AMR</b><span id="dSub"></span></p><span class="dnote">Simulated estimate based on the settings shown</span></header>
         <aside class="dcol dleft" aria-label="Live readings">
           <section class="pcard" id="pClock"></section>
           <section class="pcard pamrcard" id="pAmr" title="Click to follow this AMR"><div id="pAmrTxt"></div><canvas id="simClose" width="660" height="340" aria-hidden="true"></canvas><p id="pAmrCap" class="pcap"></p></section>
@@ -96,6 +96,7 @@
         <div class="dmain">
           <div class="dview">
             <canvas id="simCv" width="1920" height="1080" aria-label="The AMR driving on the site layout"></canvas>
+            <p id="viewHint" class="vhint" hidden></p>
             <div class="vtools" id="vTools">
 <div id="simView" class="seg" aria-label="View"><button class="tab" data-v="3d">3D</button><button class="tab" data-v="plan">Plan</button></div>
 <button id="simReset" type="button" class="btn ghost" hidden title="Back to the standard angle (R)">Reset view</button>
@@ -104,10 +105,10 @@
             </div>
           </div>
           <div class="dtl" id="dTl">
-            <div class="dtlhead"><span>AMR activity across the run</span><span class="dtlhint">Click or drag to jump</span></div>
+            <div id="dTlBar"></div>
             <canvas id="simTl" width="1000" height="76" aria-label="Timeline of what the AMR does"></canvas>
             <div class="dticks" id="dTicks"></div>
-            <div class="dleg"><span><i style="background:#2F5BD0"></i>Working</span><span><i style="background:#E3A21A"></i>Waiting (door, obstacle)</span><span><i style="background:#1E8A55"></i>Charging</span><span><i style="background:#C6CFE2"></i>Idle</span></div>
+            <div class="dleg"><span><i style="background:#2F5BD0"></i>Working</span><span><i style="background:#E3A21A"></i>Waiting (door, obstacle)</span><span><i style="background:#1E8A55"></i>Charging</span><span><i style="background:#C6CFE2"></i>Idle</span><em class="dtlhint">Click or drag the timeline to jump</em></div>
           </div>
         </div>
         <aside class="dcol dright" aria-label="Production lines"><section class="pcard" id="pLines"></section></aside>

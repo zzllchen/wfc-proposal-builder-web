@@ -774,3 +774,96 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
   .vtools .btn { padding: 0 9px; } .vtools .btn .lbl { display: none; }
 }
 #sim.presenting #simStage.dash { padding: 12px; }
+
+
+/* ---------- the dashboard, made to fit a 100% browser: one-line header, the playback bar inside the timeline card, compact side panels ---------- */
+#simStage.dash { gap: 12px 14px; padding: 12px; }
+@media (min-width: 1101px) { #simStage.dash { grid-template-columns: 262px minmax(0, 1fr) 306px; } }
+#simStage.dash .dhead { padding: 0 4px; align-items: center; min-height: 22px; }
+.dline { margin: 0; font-size: 14px; color: #5B6577; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dline b { font-size: 16px; color: #0B1220; letter-spacing: -.1px; }
+#dSub::before { content: "·"; margin: 0 9px; color: #9AA6BC; }
+#dSub:empty::before { content: none; }
+.dnote { font-size: 12px; }
+#simStage.dash .dcol { gap: 12px; }
+.pcard { border-radius: 16px; padding: 14px 16px; }
+.dtl { padding: 12px 14px 10px; }
+#dTlBar { margin-bottom: 10px; }
+#dTlBar .simbar { position: static; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 0; margin: 0; border: 0; background: none; box-shadow: none; opacity: 1; transform: none; pointer-events: auto; width: auto; max-width: none; }
+#dTlBar .simbar .sp { flex: 1; }
+#dTlBar .simbar #simNote { display: none; }
+#dTlBar .btn { height: 38px; min-height: 38px; padding: 0 14px; font-size: 14px; }
+#dTlBar #simPlay { min-width: 104px; }
+#dTlBar .seg { min-height: 38px; } #dTlBar .seg .tab { min-height: 32px; padding: 0 11px; font-size: 14px; }
+#simTl { margin-top: 0; }
+.dleg { align-items: center; margin-top: 8px; row-gap: 4px; }
+.dtlhint { margin-left: auto; font-style: normal; font-size: 12px; color: #8793A8; }
+.vhint { position: absolute; left: 12px; bottom: 12px; z-index: 2; margin: 0; max-width: calc(100% - 24px); padding: 7px 13px; border-radius: 99px; background: rgba(255,255,255,.92); box-shadow: 0 4px 14px rgba(11,18,32,.12); font-size: 12.5px; color: #3A4766; pointer-events: none; }
+.vhint[hidden] { display: none; }
+#simStage:not(.dash) .vhint { display: none; }
+#simStage.dash #simNote { display: none; }
+.vtools { top: 10px; right: 10px; gap: 6px; }
+.vtools .btn { height: 34px; min-height: 34px; padding: 0 11px; font-size: 13px; }
+.vtools #simFull { width: 34px; }
+.vtools .seg .tab { height: 28px; min-height: 28px; padding: 0 11px; font-size: 13px; }
+/* side panels: tighter rows so they fit without scrolling */
+.pclock b { font-size: 32px; }
+.psub { margin: 0 0 8px; }
+.pamr b { font-size: 15px; }
+.pcap { margin-top: 8px; }
+.lcap { margin-top: 10px; }
+.lr { padding: 5px 8px; font-size: 13.5px; }
+.llist { gap: 1px; }
+.qbox { margin-top: 10px; padding-top: 10px; }
+/* the close-up only where there is height for it */
+#simClose { display: none; }
+@media (min-height: 900px) { #simClose { display: block; } }
+#sim.presenting #simClose { display: block; }
+@media (max-height: 899px) { #sim.presenting #simClose { display: none; } }
+@media (max-width: 1100px) {
+  #dTlBar .simbar { gap: 8px; }
+  #simClose { display: block; }
+  .dline { white-space: normal; }
+}
+@media (max-width: 680px) {
+  #dTlBar .btn { padding: 0 11px; } #dTlBar .simbar .lbl { display: none; } #dTlBar #simPlay span { display: inline; } #dTlBar #simPlay { min-width: 0; }
+  #dTlBar .simbar .sp { display: none; }
+  .dtlhint { display: none; }
+  .vhint { display: none; }
+  #simClose { display: none; }
+}
+
+/* the lines card (right) stretches so that column ends level with the timeline card */
+@media (min-width: 1101px) {
+  #simStage.dash .dright > .pcard:last-child { flex: 1; min-height: 0; }
+  #pLines { display: flex; flex-direction: column; }
+  #pLines .qbox { margin-top: auto; }
+}
+
+/* a short screen: the dashboard keeps a sensible height and the page scrolls instead of squashing the picture */
+#simStage.dash { min-height: 600px; }
+#sim:not(.presenting) { overflow-y: auto; }
+/* the playback buttons keep to one row: when the card is narrow, the words go and the icons stay */
+.dtl { container-type: inline-size; }
+@container (max-width: 780px) {
+  #dTlBar #simRestart .lbl, #dTlBar #obsAdd span, #dTlBar #simSave .lbl { display: none; }
+  #dTlBar #simRestart, #dTlBar #obsAdd, #dTlBar #simSave { width: 38px; padding: 0; justify-content: center; }
+}
+@container (max-width: 520px) {
+  #dTlBar .simbar .sp { display: none; }
+  #dTlBar #simSpeed .tab { padding: 0 8px; }
+}
+
+/* phone: the playback controls make two tidy rows (play, restart, obstacle, video; then the speeds across) */
+@media (max-width: 680px) {
+  #dTlBar .simbar { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; }
+  #dTlBar .simplay { display: contents; }
+  #dTlBar #simPlay { grid-row: 1; grid-column: 1; width: 100%; }
+  #dTlBar #simRestart { grid-row: 1; grid-column: 2; width: 40px; }
+  #dTlBar #obsAdd { grid-row: 1; grid-column: 3; width: 40px; }
+  #dTlBar #simSave { grid-row: 1; grid-column: 4; width: 40px; }
+  #dTlBar #obsDel { display: none; }
+  #dTlBar #simSpeed { grid-row: 2; grid-column: 1 / -1; display: flex; }
+  #dTlBar #simSpeed .tab { flex: 1; padding: 0; }
+  #dTlBar #simRestart .lbl, #dTlBar #obsAdd span, #dTlBar #simSave .lbl { display: none; }
+}

@@ -524,6 +524,8 @@
     dash = on; W = nw; H = nh; MAP = on ? { x: 22, y: 22, w: W - 44, h: H - 44 } : { x: 70, y: 160, w: 1330, h: 730 };
     cv.width = W; cv.height = H; if (stat) { stat.width = W; stat.height = H; } statKey = ''; camMemo = null; tlKey = '';
     const st = $('#simStage'); if (st) st.classList.toggle('dash', on);
+    const bar = $('#simBar'), slot = $('#dTlBar'), sheet = $('#simSheet');
+    if (bar && slot && sheet) { if (on) { if (bar.parentNode !== slot) slot.appendChild(bar); } else if (bar.parentNode !== sheet.parentNode) sheet.parentNode.insertBefore(bar, sheet); }
     if (on) setTimeout(fitView, 30);
   }
   function applyLayout() { layout(wantDash(), W, H); }
@@ -539,7 +541,7 @@
   }
   // the AMR close-up, drawn into the little canvas in the left panel
   function drawCloseupDom(s) {
-    const c = $('#simClose'); if (!c || !s) return;
+    const c = $('#simClose'); if (!c || !s || !c.clientWidth) return;   // (hidden on a short screen)
     const main = ctx, keepCU = CU; ctx = c.getContext('2d'); CU = { x: 0, y: 0, w: 330, h: 170 };
     ctx.setTransform(2, 0, 0, 2, 0, 0); ctx.clearRect(0, 0, 330, 170); drawCloseup(s, { bare: true }); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx = main; CU = keepCU;
   }
@@ -728,7 +730,7 @@
   };
 
   /* ---------- recording to a video file ---------- */
-  function setNote(m) { const n = $('#simNote'); if (n) n.textContent = m || ''; }
+  function setNote(m) { const n = $('#simNote'), v = $('#viewHint'); if (n) n.textContent = m || ''; if (v) { v.textContent = m || ''; v.hidden = !m; } }
   function startRecording() {
     if (!model || !model.ok || recState) return;
     if (!window.MediaRecorder || !cv.captureStream) { setNote('This browser cannot record video. Use Edge or Chrome.'); return; }
