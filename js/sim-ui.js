@@ -13,6 +13,11 @@
   const $ = s => document.querySelector(s);
   let cv, ctx, S, D, model, img = null, imgSrc = '', t = 0, playing = true, speedF = 8, view = '3d', last = 0, raf = 0, recState = null, cam = null, inited = false;
   let hover = null, toast = null, hits = [], clockOverride = null, rows = [], dots = [], vz = VIZ;   // vz: how much bigger than life the AMR is drawn (the close-up draws it life size)
+  // the 3D camera: drag to turn (az) and tilt (elev), scroll to zoom; the standard view is the isometric one
+  const AZ0 = Math.PI / 4, ELEV0 = Math.asin(1 / Math.sqrt(3)), ELEV_MIN = 0.3, ELEV_MAX = 1.5;
+  let az = AZ0, elev = ELEV0, zoom = 1, orb = null, camMemo = null;
+  const camTag = () => [view, az.toFixed(3), elev.toFixed(3), zoom.toFixed(3)].join(',');
+  const viewMoved = () => Math.abs(az - AZ0) > 1e-3 || Math.abs(elev - ELEV0) > 1e-3 || Math.abs(zoom - 1) > 1e-3;
   let task = null, taskPts = [];                                                                     // task: the point-to-point run on screen (null = the longest route, trip after trip)
   // the shift simulation (js/ops.js): mode 'shift' plays a whole shift with every line, the queue, charging, doors and obstacles; mode 'trip' is one trip at a time
   let mode = 'shift', ops = null, opsAll = null, opsModel = null, opsSig = '', obsSince = {}, placing = false, selObs = null, dragObs = null, sheetOpen = '', unit = 'km';
@@ -36,33 +41,46 @@
   const KIND = { out: LIGHT, load: SLATE, pivot: AMBER, drive: BLUE, unload: SLATE, go: LIGHT, wait: AMBER, charge: GREEN, swap: GREEN, idle: '#9AA6BC' };
   const tagOf = r => (/(\d+)\s*$/.exec(r.name || '') || [])[1] || (r.num !== undefined && r.num !== null && r.num !== '' ? String(r.num) : '•');   // the number shown on a station: the line's own number when its name ends in one
   const toScreen = (x, y, z) => cam.P(x, y, z || 0);
+  const SQ = () => (cam && cam.sqr) || 1;   // how much flatter a circle on the floor looks than in the standard view (it follows the tilt)
   const planToWorld = p => [p.x * model.k, p.y / model.aspect * model.k];
 
   /* ---------- the camera: fit the whole layout into the picture ---------- */
+  // the picture of the layout stays inside its own area, even when zoomed in (the cards and counters are never drawn over)
+  const clipWorld = () => { ctx.beginPath(); ctx.rect(50, 150, 1360, 800); ctx.clip(); };
   function camera() {
-    const k = model.k, asp = model.aspect, iso = view === '3d', box = MAP;
-    const pr = (x, y, z) => iso ? [(x - y) * C30, (x + y) * S30 - (z || 0)] : [x, y];
-    const cs = [pr(0, 0, 0), pr(k, 0, 0), pr(k, k / asp, 0), pr(0, k / asp, 0), pr(0, 0, 6)];
-    const bx0 = Math.min(...cs.map(c => c[0])), bx1 = Math.max(...cs.map(c => c[0])), by0 = Math.min(...cs.map(c => c[1])), by1 = Math.max(...cs.map(c => c[1]));
-    const sc = Math.min(box.w / (bx1 - bx0), box.h / (by1 - by0)), ox = box.x + (box.w - (bx1 - bx0) * sc) / 2 - bx0 * sc, oy = box.y + (box.h - (by1 - by0) * sc) / 2 - by0 * sc;
-    return { iso, sc, ox, oy, P: (x, y, z) => { const q = pr(x, y, z); return [ox + q[0] * sc, oy + q[1] * sc]; } };
+    const k = model.k, asp = model.aspect, iso = view === '3d', box = MAP, h = k / asp, key = [camTag(), k, asp].join('|');
+    if (camMemo && camMemo.key === key) return camMemo.cam;
+    const K = C30 * Math.SQRT2, sE = Math.sin(elev), cE = Math.cos(elev);
+    const proj = a => { const sA = Math.sin(a), cA = Math.cos(a); return (x, y, z) => iso ? [K * (x * sA - y * cA), K * sE * (x * cA + y * sA) - K * cE * (z || 0)] : [x, y]; };
+    const extent = pr => { const cs = [pr(0, 0, 0), pr(k, 0, 0), pr(k, h, 0), pr(0, h, 0), pr(0, 0, 6)]; return { x0: Math.min(...cs.map(c => c[0])), x1: Math.max(...cs.map(c => c[0])), y0: Math.min(...cs.map(c => c[1])), y1: Math.max(...cs.map(c => c[1])) }; };
+    const pr = proj(az), b = extent(pr), fit = e => Math.min(box.w / (e.x1 - e.x0), box.h / (e.y1 - e.y0));
+    let sc = fit(b);
+    if (iso) for (let a = 0; a < Math.PI; a += Math.PI / 18) sc = Math.min(sc, fit(extent(proj(a))));   // the size of the worst angle, so turning the view never makes the layout grow or shrink
+    sc *= zoom;
+    const ox = box.x + (box.w - (b.x1 - b.x0) * sc) / 2 - b.x0 * sc, oy = box.y + (box.h - (b.y1 - b.y0) * sc) / 2 - b.y0 * sc;
+    const P = (x, y, z) => { const q = pr(x, y, z); return [ox + q[0] * sc, oy + q[1] * sc]; }, o0 = P(0, 0, 0), ex = P(1, 0, 0), ey = P(0, 1, 0);
+    const c = { iso, sc, ox, oy, az, elev, sqr: iso ? sE / 0.57735 : 1, dir: iso ? [Math.cos(az), Math.sin(az)] : [Math.SQRT1_2, Math.SQRT1_2], ex: [ex[0] - o0[0], ex[1] - o0[1]], ey: [ey[0] - o0[0], ey[1] - o0[1]], P };
+    camMemo = { key, cam: c }; return c;
   }
 
   /* ---------- the world (drawn once, then copied each frame) ---------- */
   function drawGround() {
     const k = model.k, asp = model.aspect, w = k, h = k / asp, P = cam.P;
     const c = [P(0, 0, 0), P(w, 0, 0), P(w, h, 0), P(0, h, 0)], th = 16;
-    ctx.save(); ctx.fillStyle = '#C8D2E6';
-    if (cam.iso) {
-      ctx.beginPath(); ctx.moveTo(c[3][0], c[3][1]); ctx.lineTo(c[2][0], c[2][1]); ctx.lineTo(c[2][0], c[2][1] + th); ctx.lineTo(c[3][0], c[3][1] + th); ctx.fill();
-      ctx.fillStyle = '#B2BFD8'; ctx.beginPath(); ctx.moveTo(c[2][0], c[2][1]); ctx.lineTo(c[1][0], c[1][1]); ctx.lineTo(c[1][0], c[1][1] + th); ctx.lineTo(c[2][0], c[2][1] + th); ctx.fill();
+    ctx.save();
+    if (cam.iso) {   // the visible sides of the floor slab: the edges that face the camera, the one facing away from the light a little darker
+      [[0, 1, 0, -1], [1, 2, 1, 0], [2, 3, 0, 1], [3, 0, -1, 0]].forEach(([i0, i1, nx, ny]) => {
+        if (nx * cam.dir[0] + ny * cam.dir[1] <= 0.02) return;
+        ctx.fillStyle = shade('#C8D2E6', (0.9 + 0.12 * (ny - nx) / Math.SQRT2) / 0.985);
+        ctx.beginPath(); ctx.moveTo(c[i0][0], c[i0][1]); ctx.lineTo(c[i1][0], c[i1][1]); ctx.lineTo(c[i1][0], c[i1][1] + th); ctx.lineTo(c[i0][0], c[i0][1] + th); ctx.fill();
+      });
     }
     ctx.restore();
     ctx.save(); ctx.beginPath(); c.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.clip();
     ctx.fillStyle = '#F2F5FB'; ctx.fillRect(0, 0, W, H);
     if (img && img.complete && img.naturalWidth) {
-      const s = k / img.naturalWidth, a = cam.iso ? s * C30 * cam.sc : s * cam.sc, b = cam.iso ? s * S30 * cam.sc : 0;
-      ctx.setTransform(a, b, cam.iso ? -a : 0, cam.iso ? b : a, c[0][0], c[0][1]); ctx.drawImage(img, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const s = k / img.naturalWidth;
+      ctx.setTransform(s * cam.ex[0], s * cam.ex[1], s * cam.ey[0], s * cam.ey[1], c[0][0], c[0][1]); ctx.drawImage(img, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.beginPath(); c.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill();   // calm the picture so the routes stand out
     }
     ctx.restore();
@@ -92,13 +110,13 @@
     dots = dots || rows.map((r, i) => { const R = model.routes[i]; return { x: R.P[0].x, y: R.P[0].y, tag: tagOf(r), far: i === model.far }; });
     ((S.layoutPlan || {}).points || []).forEach(p => {
       const w = planToWorld(p), [x, y] = P(w[0], w[1], 0);
-      if (p.kind === 'spot') { ctx.save(); ctx.fillStyle = SLATE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; rr(ctx, x - 11, y - (cam.iso ? 7 : 11), 22, cam.iso ? 14 : 22, 4); ctx.fill(); ctx.stroke(); ctx.restore(); if (p.label) txt(String(p.label).slice(0, 2), x, y + (cam.iso ? 4 : 5), 12, 700, '#fff', 'center'); }
-      else if (p.kind === 'door') { ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 9, cam.iso ? 6 : 9, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
+      if (p.kind === 'spot') { ctx.save(); ctx.fillStyle = SLATE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; rr(ctx, x - 11, y - ((cam.iso ? 7 * SQ() : 11)), 22, (cam.iso ? 14 * SQ() : 22), 4); ctx.fill(); ctx.stroke(); ctx.restore(); if (p.label) txt(String(p.label).slice(0, 2), x, y + (cam.iso ? 4 : 5), 12, 700, '#fff', 'center'); }
+      else if (p.kind === 'door') { ctx.save(); ctx.fillStyle = '#fff'; ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 9, (cam.iso ? 6 * SQ() : 9), 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
     });
     dots.forEach(r => {   // pick-up stations: numbered dots; the farthest has an amber ring
       const [x, y] = P(r.x, r.y, 0), far = r.far;
-      ctx.save(); if (far) { ctx.strokeStyle = AMBER; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, y, 19, cam.iso ? 12 : 19, 0, 0, 7); ctx.stroke(); }
-      ctx.fillStyle = BLUE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 14, cam.iso ? 9.5 : 14, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+      ctx.save(); if (far) { ctx.strokeStyle = AMBER; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, y, 19, (cam.iso ? 12 * SQ() : 19), 0, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = BLUE; ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(x, y, 14, (cam.iso ? 9.5 * SQ() : 14), 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
       txt(r.tag, x, y + (cam.iso ? 4.5 : 5.5), 14, 700, '#fff', 'center');
     });
   }
@@ -112,8 +130,8 @@
       const a = loc[i], b = loc[(i + 1) % 4], e = [b[0] - a[0], b[1] - a[1]], n = [e[1], -e[0]], len = Math.hypot(n[0], n[1]) || 1, mid = [(a[0] + b[0]) / 2 - x, (a[1] + b[1]) / 2 - y];
       if (n[0] * mid[0] + n[1] * mid[1] < 0) { n[0] = -n[0]; n[1] = -n[1]; }
       n[0] /= len; n[1] /= len;
-      if (cam.iso && n[0] + n[1] <= 0.05) continue;
-      faces.push({ a, b, n, depth: (a[0] + a[1] + b[0] + b[1]) / 2 });
+      if (cam.iso && n[0] * cam.dir[0] + n[1] * cam.dir[1] <= 0.05) continue;
+      faces.push({ a, b, n, depth: ((a[0] + b[0]) * cam.dir[0] + (a[1] + b[1]) * cam.dir[1]) / 2 });
     }
     faces.sort((p, q) => p.depth - q.depth);
     faces.forEach(f => {
@@ -155,7 +173,7 @@
     parts.push(part(s, -0.50, -0.44, -0.22, -0.15, 0.60, 0.67, T.red));                                                                        // emergency stop
     if (blink) parts.push(part(s, -0.83, -0.77, -0.03, 0.03, 1.40, 1.47, T.amber));                                                            // beacon
     if (s.laden) palletParts(s.x + c * 0.47 * vz, s.y + sn * 0.47 * vz, s.heading, lift).forEach(q => parts.push(q));
-    parts.forEach(q => { q.key = cam.iso ? q.cx + q.cy + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
+    parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
     parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
   }
   function drawAmr(s, name) {
@@ -163,7 +181,7 @@
     ctx.save(); ctx.beginPath(); ctx.moveTo(g0[0], g0[1]);
     for (let i = 0; i <= 14; i++) { const a = a0 + i * 0.05, q = toScreen(s.x + Math.cos(a) * R0, s.y + Math.sin(a) * R0, 0); ctx.lineTo(q[0], q[1]); }
     ctx.closePath(); const gr = ctx.createRadialGradient(g0[0], g0[1], 0, g0[0], g0[1], 90); gr.addColorStop(0, 'rgba(47,91,208,.34)'); gr.addColorStop(1, 'rgba(47,91,208,.04)'); ctx.fillStyle = gr; ctx.fill(); ctx.restore();
-    ctx.save(); ctx.fillStyle = 'rgba(47,91,208,.08)'; ctx.strokeStyle = 'rgba(47,91,208,.4)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(g0[0], g0[1], 62, cam.iso ? 37 : 62, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.fillStyle = 'rgba(47,91,208,.08)'; ctx.strokeStyle = 'rgba(47,91,208,.4)'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(g0[0], g0[1], 62, (cam.iso ? 37 * SQ() : 62), 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore();
     const c = Math.cos(s.heading), sn = Math.sin(s.heading);   // a soft shadow
     [[0.6, .06], [0.3, .08], [0, .1]].forEach(([grow, al]) => { const L = 1.2 * VIZ + grow, Wd = 0.42 * VIZ + grow, cxw = s.x + c * 0.28 * VIZ + 0.6, cyw = s.y + sn * 0.28 * VIZ + 0.6;
       const g2 = [[-L, -Wd], [L, -Wd], [L, Wd], [-L, Wd]].map(p => toScreen(cxw + p[0] * c - p[1] * sn, cyw + p[0] * sn + p[1] * c, 0)); ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = INK; ctx.beginPath(); g2.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill(); ctx.restore(); });
@@ -183,7 +201,7 @@
     const bg = ctx.createLinearGradient(0, CU.y, 0, CU.y + CU.h); bg.addColorStop(0, '#F6F8FD'); bg.addColorStop(1, '#E6ECF8'); ctx.fillStyle = bg; ctx.fillRect(CU.x, CU.y, CU.w, CU.h);
     const g0 = ctx.createRadialGradient(cx, gy, 0, cx, gy, 130); g0.addColorStop(0, 'rgba(47,91,208,.22)'); g0.addColorStop(1, 'rgba(47,91,208,0)');
     ctx.save(); ctx.translate(cx, gy + 6); ctx.scale(1, 0.5); ctx.fillStyle = g0; ctx.beginPath(); ctx.arc(0, 0, 130, 0, 7); ctx.fill(); ctx.restore();
-    cam = { iso: true, sc: sc2, P: (x, y, z) => [cx + ((x - s.x) - (y - s.y)) * C30 * sc2, gy + ((x - s.x) + (y - s.y)) * S30 * sc2 - (z || 0) * sc2] };
+    cam = { iso: true, sc: sc2, sqr: 1, dir: [Math.SQRT1_2, Math.SQRT1_2], P: (x, y, z) => [cx + ((x - s.x) - (y - s.y)) * C30 * sc2, gy + ((x - s.x) + (y - s.y)) * S30 * sc2 - (z || 0) * sc2] };
     vz = 1; drawAmrScene(s, true); vz = VIZ; cam = keep;
     ctx.restore();
     const fk = `Forks ${Math.round(s.lift * (M && M.liftMm ? M.liftMm : 205))} mm`, ph = s.phase || s.label || '';   // two small labels on soft pills, so the AMR never draws over them
@@ -204,7 +222,7 @@
     });
     // a pulse on the pick-up it is going to
     const a = job.pick, ph = (wall() * 1.4) % 1, g = a ? toScreen(a.x, a.y, 0) : null;
-    if (g && s.kind === 'out' || (s.kind === 'pivot' && s.waiting)) { ctx.save(); ctx.strokeStyle = `rgba(47,91,208,${(1 - ph) * .6})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(g[0], g[1], 18 + ph * 40, cam.iso ? (18 + ph * 40) * .6 : 18 + ph * 40, 0, 0, 7); ctx.stroke(); ctx.restore(); }
+    if (g && s.kind === 'out' || (s.kind === 'pivot' && s.waiting)) { ctx.save(); ctx.strokeStyle = `rgba(47,91,208,${(1 - ph) * .6})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(g[0], g[1], 18 + ph * 40, cam.iso ? (18 + ph * 40) * .6 * SQ() : 18 + ph * 40, 0, 0, 7); ctx.stroke(); ctx.restore(); }
     // a trail behind it
     const pts = [], tr = mode === 'shift' ? Math.max(0.6, speedF / 12) : 0.6; for (let i = 14; i >= 0; i--) { const q = Sim.at(mdl, Math.max(0, s.t - i * tr)); pts.push(toScreen(q.x, q.y, 0)); }
     for (let i = 1; i < pts.length; i++) { ctx.save(); ctx.globalAlpha = i / pts.length * .5; ctx.strokeStyle = s.laden ? BLUE : LIGHT; ctx.lineWidth = 10 * (i / pts.length); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke(); ctx.restore(); }
@@ -214,7 +232,7 @@
     if (!task) return;
     [[task.from, 'FROM', BLUE], [task.to, 'TO', GREEN]].forEach(([p, lab, col]) => {
       const w = planToWorld(p), [x, y] = toScreen(w[0], w[1], 0);
-      ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, y, 24, cam.iso ? 15 : 24, 0, 0, 7); ctx.stroke();
+      ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(x, y, 24, (cam.iso ? 15 * SQ() : 24), 0, 0, 7); ctx.stroke();
       const pw = width(lab, 15, 700) + 22; ctx.fillStyle = col; rr(ctx, x - pw / 2, y - 62, pw, 28, 14); ctx.fill(); ctx.beginPath(); ctx.moveTo(x - 6, y - 34); ctx.lineTo(x + 6, y - 34); ctx.lineTo(x, y - 26); ctx.fill(); ctx.restore();
       txt(lab, x, y - 42, 15, 700, '#fff', 'center');
     });
@@ -347,7 +365,7 @@
     opsLines().forEach(L => {
       const st = lineState(L, tt), c = Math.cos(L.hd), sn = Math.sin(L.hd), px = L.pick.x + c * 0.47 * VIZ, py = L.pick.y + sn * 0.47 * VIZ, nx = -sn, ny = c;
       const parts = [], g = toScreen(px, py, 0), lit = st.waiting > 0;
-      if (lit) { const ph = (wall() * 1.2) % 1; ctx.save(); ctx.strokeStyle = `rgba(227,162,26,${0.85 - ph * 0.6})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + ph * 14, (cam.iso ? 18 : 30) + ph * 9, 0, 0, 7); ctx.stroke(); ctx.restore(); }
+      if (lit) { const ph = (wall() * 1.2) % 1; ctx.save(); ctx.strokeStyle = `rgba(227,162,26,${0.5 - ph * 0.45})`; ctx.fillStyle = `rgba(227,162,26,${0.10 - ph * 0.08})`; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + ph * 14, ((cam.iso ? 18 * SQ() : 30)) + ph * 9, 0, 0, 7); ctx.fill(); ctx.stroke(); ctx.restore(); }
       // the pallet at the line: being packed (the crate grows), or finished and waiting (full, lit); more waiting pallets stand beside it
       const crate = lit ? 0.54 : Math.max(0.06, st.prog * 0.54), base2 = { x: px, y: py, heading: L.hd };
       parts.push(part(base2, -0.395, 0.395, -0.30, 0.30, 0, 0.12, T.wood));
@@ -358,10 +376,16 @@
       personParts(sx, sy, L.hd + Math.PI / 2, st.producing && !lit).forEach(q => parts.push(q));
       const bx = px - nx * 0.6 * VIZ + c * 0.55 * VIZ, by = py - ny * 0.6 * VIZ + sn * 0.55 * VIZ;
       parts.push(part({ x: bx, y: by, heading: L.hd }, -0.04, 0.04, -0.04, 0.04, 0, 1.05, T.grey), part({ x: bx, y: by, heading: L.hd }, -0.08, 0.08, -0.08, 0.08, 1.05, 1.2, lit ? (st.finished ? T.amber : ['#7DF0A8', '#2DBE6C']) : T.dark));
-      parts.forEach(q => { q.key = cam.iso ? q.cx + q.cy + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
+      parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
       parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
-      if (L.li === serving) { ctx.save(); ctx.strokeStyle = BLUE; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.ellipse(g[0], g[1], 44, cam.iso ? 26 : 44, 0, 0, 7); ctx.stroke(); ctx.restore(); }
-      if (st.waiting > 0) { const top = toScreen(px, py, 1.25 * VIZ), w = 34; ctx.save(); ctx.fillStyle = AMBER; rr(ctx, top[0] - w / 2, top[1] - 26, w, 26, 13); ctx.fill(); ctx.restore(); txt(String(st.waiting), top[0], top[1] - 7, 17, 700, '#fff', 'center'); }
+      if (L.li === serving) { ctx.save(); ctx.strokeStyle = BLUE; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.ellipse(g[0], g[1], 44, (cam.iso ? 26 * SQ() : 44), 0, 0, 7); ctx.stroke(); ctx.restore(); }
+      // a pallet is ready: a small white capsule with an amber dot (the same dot as "Ready" in the panel); the number only when more than one is waiting
+      if (st.waiting > 0) {
+        const top = toScreen(px, py, 1.3 * VIZ), many = st.waiting > 1, w = many ? 46 : 26, h = 26, x0 = top[0] - w / 2, y0 = top[1] - 30;
+        ctx.save(); ctx.shadowColor = 'rgba(11,18,32,.22)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2; ctx.fillStyle = 'rgba(255,255,255,.96)'; rr(ctx, x0, y0, w, h, 13); ctx.fill(); ctx.restore();
+        ctx.save(); ctx.fillStyle = AMBER; ctx.beginPath(); ctx.arc(x0 + 13, y0 + 13, 6, 0, 7); ctx.fill(); ctx.restore();
+        if (many) txt(String(st.waiting), x0 + 26, y0 + 19.5, 16, 700, INK);
+      }
     });
   }
   // a roll-up door: two posts, the housing on top, the shutter rolling up as it opens; a light that is red (closed), amber (moving) or green (open)
@@ -380,7 +404,7 @@
       parts.push(post(-1), post(1));
       const z0 = (st.open * Hd) / VIZ; if (st.open < 0.98) parts.push(part(s0, -0.03, 0.03, -Wd / 2 / VIZ, Wd / 2 / VIZ, z0, Hd / VIZ, ['#C9D3E6', '#AEB9CE']));
       parts.push(part(s0, -0.09, 0.09, -Wd / 2 / VIZ - 0.05, Wd / 2 / VIZ + 0.05, Hd / VIZ, Hd / VIZ + 0.12, ['#8A96AD', '#6A7487']));
-      parts.forEach(q => { q.key = cam.iso ? q.cx + q.cy + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
+      parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
       parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
       const top = toScreen(d.x, d.y, Hd + 0.3 * VIZ), lab = 'Door · ' + st.label, w = width(lab, 16, 700) + 40;
       ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.strokeStyle = 'rgba(11,18,32,.12)'; ctx.lineWidth = 1.5; rr(ctx, top[0] - w / 2, top[1] - 34, w, 30, 15); ctx.fill(); ctx.stroke();
@@ -396,7 +420,7 @@
       const blocked = ev && tt < ev.t1, aside = ev && tt >= ev.t1 ? Math.min(1, (tt - ev.t1) / 1.5) : 0, ang = b.ang || 0, nx = -Math.sin(ang), ny = Math.cos(ang);
       const x = w0[0] + nx * 1.6 * aside * VIZ * 0.4, y = w0[1] + ny * 1.6 * aside * VIZ * 0.4, g = toScreen(x, y, 0), sel = selObs === o.id, ph = (wall() * 1.6) % 1;
       ctx.save(); ctx.setLineDash(blocked ? [] : [6, 6]); ctx.strokeStyle = blocked ? `rgba(216,54,47,${0.9 - ph * 0.5})` : sel ? BLUE : 'rgba(240,140,36,.8)'; ctx.lineWidth = blocked ? 5 : 3;
-      ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + (blocked ? ph * 10 : 0), (cam.iso ? 18 : 30) + (blocked ? ph * 6 : 0), 0, 0, 7); ctx.stroke(); ctx.restore();
+      ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + (blocked ? ph * 10 : 0), ((cam.iso ? 18 * SQ() : 30)) + (blocked ? ph * 6 : 0), 0, 0, 7); ctx.stroke(); ctx.restore();
       const s0 = { x, y, heading: ang }, parts = [part(s0, -0.16, 0.16, -0.16, 0.16, 0, 0.5, [ORANGE, '#C96A10']), part(s0, -0.165, 0.165, -0.165, 0.165, 0.2, 0.28, ['#FFFFFF', '#E8ECF3']), part(s0, -0.06, 0.06, -0.06, 0.06, 0.5, 0.6, T.dark)];
       parts.forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
       if (blocked) { const top = toScreen(x, y, 0.9 * VIZ), lab = `Waiting · clears in ${Math.ceil(ev.t1 - tt)} s`, w = width(lab, 15, 700) + 26; ctx.save(); ctx.fillStyle = '#D8362F'; rr(ctx, top[0] - w / 2, top[1] - 30, w, 28, 14); ctx.fill(); ctx.restore(); txt(lab, top[0], top[1] - 11, 15, 700, '#fff', 'center'); }
@@ -408,8 +432,10 @@
     const cl = S.client && S.client.name ? S.client.name : '', mdl = D && D.model ? D.model.name : 'Pallet jack AMR', n = ops.amrs.length, sc = ops.cfg.scenario;
     txt(sc === 'shift' ? `A shift with the AMR${n > 1 ? 's' : ''}` : sc === 'day' ? `A day with the AMR${n > 1 ? 's' : ''}` : `The AMR${n > 1 ? 's' : ''} at work`, 70, 92, 46, 700, INK);
     fitTxt(`${cl ? cl + '  ·  ' : ''}${ops.lines.filter(L => L.on).length} line${ops.lines.filter(L => L.on).length === 1 ? '' : 's'}  ·  ${n} × ${mdl}  ·  ${ops.cfg.charge === 'swap' ? 'battery swap' : 'automatic charging'}`, 70, 132, 1300, 24, 500, MUTE);
-    card(CU.x, CU.y, CU.w, CU.h); card(HX, 150, HW, 236); card(HX, 404, HW, 92); card(HX, 514, HW, 476);
-    txt('SHIFT CLOCK', HX + 36, 196, 20, 700, BLUE); txt('PRODUCTION LINES', HX + 36, 556, 20, 700, BLUE); txt('waiting', HX + HW - 36, 556, 18, 500, MUTE, 'right');
+    card(CU.x, CU.y, CU.w, CU.h); card(HX, 150, HW, 236); card(HX, 404, HW, 92); card(HX, 514, HW, 498);
+    txt('SHIFT CLOCK', HX + 36, 196, 20, 700, BLUE); txt('PRODUCTION LINES', HX + 36, 556, 20, 700, BLUE);
+    fitTxt(`Each line packs a pallet every ${fmt(ops.cfg.intervalMin)} min`, HX + 36, 584, HW - 72, 17, 500, MUTE);
+    txt('LINE', HX + 36, 620, 13, 700, MUTE); txt('PALLET PROGRESS', HX + 196, 620, 13, 700, MUTE); txt('STATUS', HX + HW - 36, 620, 13, 700, MUTE, 'right');
     for (let i = 0; i < 4; i++) card(KX(i), KY, KW, KH);
     // the timeline of AMR 1: what it does when, across the shift
     const a = ops.amrs[0], span = ops.Hend;
@@ -436,23 +462,33 @@
     ctx.save(); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(HX + 44, 445, 11, 0, 7); ctx.fill(); ctx.restore();
     fitTxt(s.label, HX + 72, 438, HW - 72 - 28, 25, 700, INK);
     fitTxt(L ? `${L.name}  →  ${job.toName || 'the drop-off'}${s.phase ? '  ·  ' + s.phase : ''}` : (s.phase || ''), HX + 72, 470, HW - 72 - 28, 19, 500, MUTE);
-    // the lines: the pallet being packed, and how many are waiting; the one being served is lit
-    const lines = ops.lines.filter(Lx => Lx.on), n = lines.length, pitch = Math.min(36, 300 / Math.max(n, 1)), serving = L ? L.li : -1;
+    // the lines, one row each: LINE (number and name) | PALLET PROGRESS (the bar fills while a pallet is packed) | STATUS in words:
+    // Making (packing) / Ready (finished, waiting for the AMR; the number when several) / Collecting (the AMR is on its way or loading it) / Idle
+    const lines = ops.lines.filter(Lx => Lx.on), n = lines.length, pitch = Math.min(30, 262 / Math.max(n - 1, 1)), serving = L ? L.li : -1, x1 = HX + HW - 36;
     lines.forEach((Lx, i) => {
-      const yy = 598 + i * pitch, st = lineState(Lx, tt), act = Lx.li === serving;
-      if (act) { ctx.save(); ctx.fillStyle = 'rgba(47,91,208,.10)'; rr(ctx, HX + 14, yy - pitch + 9, HW - 28, pitch - 2, 10); ctx.fill(); ctx.restore(); }
-      ctx.save(); ctx.fillStyle = st.waiting ? AMBER : act ? BLUE : '#C6CFE2'; ctx.beginPath(); ctx.arc(HX + 44, yy - 7, 12, 0, 7); ctx.fill(); ctx.restore();
-      txt(Lx.tag, HX + 44, yy - 1.5, 13, 700, st.waiting || act ? '#fff' : SLATE, 'center');
-      fitTxt(Lx.name, HX + 66, yy, 130, 20, act ? 700 : 500, act ? INK : SLATE);
-      const bx = HX + 206, bw = 104; ctx.save(); ctx.fillStyle = 'rgba(11,18,32,.07)'; rr(ctx, bx, yy - 13, bw, 8, 4); ctx.fill(); if (st.producing) { ctx.fillStyle = LIGHT; rr(ctx, bx, yy - 13, Math.max(6, bw * st.prog), 8, 4); ctx.fill(); } ctx.restore();
-      for (let k = 0; k < Math.min(st.waiting, 3); k++) { ctx.save(); ctx.fillStyle = AMBER; rr(ctx, HX + 326 + k * 18, yy - 18, 14, 14, 4); ctx.fill(); ctx.restore(); }
-      if (st.waiting > 3) txt('+' + (st.waiting - 3), HX + HW - 30, yy - 5, 16, 700, AMBER, 'right');
+      const yy = 654 + i * pitch, st = lineState(Lx, tt), act = Lx.li === serving, mid = yy - 7;
+      if (act) { ctx.save(); ctx.fillStyle = 'rgba(47,91,208,.09)'; rr(ctx, HX + 14, mid - 14, HW - 28, 28, 10); ctx.fill(); ctx.restore(); }
+      ctx.save(); ctx.fillStyle = act ? BLUE : '#E3E8F3'; ctx.beginPath(); ctx.arc(HX + 48, mid, 12, 0, 7); ctx.fill(); ctx.restore();
+      txt(Lx.tag, HX + 48, mid + 4.5, 13, 700, act ? '#fff' : SLATE, 'center');
+      fitTxt(Lx.name, HX + 70, yy, 118, 19, act ? 700 : 500, act ? INK : SLATE);
+      const bx = HX + 196, bw = 86;
+      ctx.save(); ctx.fillStyle = 'rgba(11,18,32,.08)'; rr(ctx, bx, mid - 4, bw, 8, 4); ctx.fill();
+      if (st.waiting) { ctx.fillStyle = AMBER; rr(ctx, bx, mid - 4, bw, 8, 4); ctx.fill(); }
+      else if (st.producing) { ctx.fillStyle = BLUE; rr(ctx, bx, mid - 4, Math.max(8, bw * st.prog), 8, 4); ctx.fill(); }
+      ctx.restore();
+      const label = act ? 'Collecting' : st.waiting ? (st.waiting > 1 ? `${st.waiting} ready` : 'Ready') : st.producing ? 'Making' : 'Idle';
+      if (act || st.waiting) {
+        ctx.font = `700 14px ${FONT}`; const pw = ctx.measureText(label).width + 20;
+        ctx.save(); ctx.fillStyle = act ? 'rgba(47,91,208,.13)' : '#FFEFC7'; rr(ctx, x1 - pw, mid - 12, pw, 24, 12); ctx.fill(); ctx.restore();
+        txt(label, x1 - pw / 2, mid + 5, 14, 700, act ? BLUE : '#8A5A00', 'center');
+      } else txt(label, x1, mid + 5, 14, 500, st.producing ? MUTE : '#9AA6BC', 'right');
     });
-    // the pickup queue: the next pallets in the order they were called
+    // the pickup queue: the pallets that are ready and waiting for the AMR, oldest first, with how long each has waited
     const q = ops.pallets.filter(p => p.tCall <= tt && (p.tAssign === null || p.tAssign > tt)).sort((p1, p2) => p1.tCall - p2.tCall);
-    ctx.save(); ctx.fillStyle = 'rgba(11,18,32,.09)'; ctx.fillRect(HX + 36, 912, HW - 72, 2); ctx.restore();
-    txt('QUEUE', HX + 36, 946, 17, 700, BLUE); txt(q.length ? `${q.length} waiting` : 'empty', HX + 108, 946, 18, 700, q.length ? INK : MUTE);
-    fitTxt(q.slice(0, 3).map(p => `${ops.lines[p.li].tag ? 'Ch ' + ops.lines[p.li].tag : ops.lines[p.li].name} · ${mm(tt - p.tCall)}`).join('   '), HX + 36, 976, HW - 72, 17, 500, MUTE);
+    ctx.save(); ctx.fillStyle = 'rgba(11,18,32,.09)'; ctx.fillRect(HX + 36, 936, HW - 72, 2); ctx.restore();
+    txt('WAITING FOR PICKUP', HX + 36, 968, 15, 700, BLUE); txt(q.length ? `${q.length} ${q.length === 1 ? 'pallet' : 'pallets'}` : 'none', x1, 968, 18, 700, q.length ? INK : MUTE, 'right');
+    if (!q.length) txt('The AMR has caught up', HX + 36, 1000, 17, 500, MUTE);
+    else { let qx = HX + 36; q.slice(0, 3).forEach(p => { const tg = ops.lines[p.li].tag, tm = mm(tt - p.tCall); ctx.save(); ctx.fillStyle = '#E3E8F3'; ctx.beginPath(); ctx.arc(qx + 11, 994, 11, 0, 7); ctx.fill(); ctx.restore(); txt(tg, qx + 11, 998.5, 12, 700, SLATE, 'center'); txt(tm, qx + 28, 1000, 17, 600, INK); qx += 28 + width(tm, 17, 600) + 18; }); txt('waited', Math.min(qx, x1), 1000, 14, 500, MUTE); }
     // the four counters (so far in the shift)
     const moved = ops.pallets.filter(p => p.tDrop !== null && p.tDrop <= tt), made = ops.pallets.filter(p => p.tFinish <= tt).length;
     const lead = moved.length ? moved.reduce((sm, p) => sm + p.tDrop - p.tCall, 0) / moved.length : 0, c = catAt(a0, tt), tot = Math.max(1, tt);
@@ -471,19 +507,21 @@
     return serving;
   }
   function frameOps(tt) {
-    const key = ['ops', view, speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig, opsSig].join('|');
+    const key = ['ops', camTag(), speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig, opsSig].join('|');
     if (!stat) { stat = document.createElement('canvas'); stat.width = W; stat.height = H; }
     if (key !== statKey) {
       statKey = key; const main = ctx; ctx = stat.getContext('2d'); cam = camera();
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
       const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#FBFCFE'); bg.addColorStop(1, '#E9EEF8'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      drawGround(); drawAreas(); drawRoutesBase(opsModel); drawStations(ops.lines.map(L => ({ x: L.pick.x, y: L.pick.y, tag: L.tag, far: L.ri === opsModel.far }))); drawHudStaticOps(); ctx = main;
+      ctx.save(); clipWorld(); drawGround(); drawAreas(); drawRoutesBase(opsModel); drawStations(ops.lines.map(L => ({ x: L.pick.x, y: L.pick.y, tag: L.tag, far: L.ri === opsModel.far }))); ctx.restore(); drawHudStaticOps(); ctx = main;
     }
     cam = camera(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stat, 0, 0);
     const sts = ops.amrs.map(a => Sim.at(a.model, tt)), s0 = sts[0], j0 = s0.jobRef, serving = j0 && !j0.service && j0.pallet !== undefined ? ops.pallets.find(p => p.id === j0.pallet).li : -1;
+    ctx.save(); clipWorld();
     sts.forEach((s, i) => { if (s.jobRef && !s.jobRef.service) drawProgress(s, ops.amrs[i].model); });
     drawLines(tt, serving); drawDoors(tt); drawObstacles(tt);
     sts.forEach((s, i) => drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')));
+    ctx.restore();
     drawCloseup(s0); drawHudOps(tt, sts);
   }
 
@@ -492,18 +530,18 @@
   function frame(tt) {
     if (!model || !model.ok) return;
     if (mode === 'shift' && ops) { frameOps(Math.min(tt, ops.Hend)); return; }
-    const s = Sim.at(model, tt), key = [view, speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig].join('|');
+    const s = Sim.at(model, tt), key = [camTag(), speedF, !!(img && img.complete && img.naturalWidth), rebuild.sig].join('|');
     if (!stat) { stat = document.createElement('canvas'); stat.width = W; stat.height = H; }
     if (key !== statKey) {   // the floor, the areas, the routes and the readings' frames are drawn once
       statKey = key; const main = ctx; ctx = stat.getContext('2d'); cam = camera();
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
       const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#FBFCFE'); bg.addColorStop(1, '#E9EEF8'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-      drawGround(); drawAreas(); drawRoutesBase(); drawStations(); drawHudStatic(); ctx = main;
+      ctx.save(); clipWorld(); drawGround(); drawAreas(); drawRoutesBase(); drawStations(); ctx.restore(); drawHudStatic(); ctx = main;
       dots = rows.map((r, i) => { const R = model.routes[i], g = toScreen(R.P[0].x, R.P[0].y, 0); return { i, cx: g[0], cy: g[1], r: 24 }; });
     }
     cam = camera();
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(stat, 0, 0);
-    drawProgress(s); drawTaskEnds(); drawAmr(s); drawCloseup(s); drawHud(s);
+    ctx.save(); clipWorld(); drawProgress(s); drawTaskEnds(); drawAmr(s); ctx.restore(); drawCloseup(s); drawHud(s);
     if (task && s.finished && playing && !recState) { playing = false; ui(); }   // a task ends with the AMR standing where it put the pallet down
   }
   function loop(now) {
@@ -645,10 +683,14 @@
       if (e.clientY > r.bottom - 96 || (e.target.closest && e.target.closest('.simbar'))) showBar(); else if (el.classList.contains('showbar')) { clearTimeout(idleT); idleT = setTimeout(hideBar, 500); }
     }
   }
+  // the view: "Reset view" shows only when the picture has been turned, tilted or zoomed
+  function viewUi() { const b = $('#simReset'); if (b) b.hidden = !viewMoved() || !model || !model.ok; }
+  function resetView() { az = AZ0; elev = ELEV0; zoom = 1; viewUi(); }
   const typing = e => { const t = e.target; return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); };
   function onKey(e) {
     if (document.body.dataset.tab !== 'sim' || typing(e) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === 'f' || e.key === 'F') { present(!presenting); e.preventDefault(); }
+    else if (e.key === 'r' || e.key === 'R') { resetView(); e.preventDefault(); }
     else if (e.key === 'Escape' && presenting) { present(false); e.preventDefault(); }
     else if (e.key === 'Escape' && placing) { placing = false; ui(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && selObs && mode === 'shift') { removeObstacle(selObs); ui(); e.preventDefault(); }
@@ -668,6 +710,7 @@
     if (sp.dataset.sig !== mode) { sp.dataset.sig = mode; sp.innerHTML = list.map(v => `<button class="tab" data-v="${v}">${v}×</button>`).join(''); }
     sp.querySelectorAll('button').forEach(b => b.classList.toggle('active', +b.dataset.v === speedF));
     document.querySelectorAll('#simView button').forEach(b => b.classList.toggle('active', b.dataset.v === view));
+    viewUi(); cv.dataset.view = view; cv.style.touchAction = presenting || view !== '3d' ? (presenting ? 'none' : '') : 'pan-y';
     ['simPlay', 'simRestart', 'simSpeed', 'simView', 'taskBar', 'simTop'].forEach(id => { const e = $('#' + id); if (e) e.classList.toggle('lock', !!recState); });
     $('#simSave').disabled = !ok || !!recState;
     const tb = $('#taskBar'); if (tb) { tb.hidden = shift || !ok || taskPts.length < 2; if (ok && !shift) { fillTaskBar(); $('#taskDefault').hidden = !task; syncRun(); } }
@@ -693,7 +736,10 @@
   /* ---------- the shift settings: written into the proposal (S.sim), so they are saved with it ---------- */
   function setSim(k, v) { S.sim = Object.assign({}, S.sim || {}); if (v === undefined) delete S.sim[k]; else S.sim[k] = v; rebuildOps(); ui(); if (sheetOpen === 'results') renderSheet(); if (root.WFCApp) root.WFCApp.changed(); }
   // a point on the picture -> metres on the floor -> a fraction of the layout
-  function worldAt(p) { const c = camera(), X = (p.x - c.ox) / c.sc, Y = (p.y - c.oy) / c.sc; return c.iso ? { x: (X / C30 + Y / S30) / 2, y: (Y / S30 - X / C30) / 2 } : { x: X, y: Y }; }
+  function worldAt(p) {
+    const c = camera(), X = (p.x - c.ox) / c.sc, Y = (p.y - c.oy) / c.sc; if (!c.iso) return { x: X, y: Y };
+    const K = C30 * Math.SQRT2, u = X / K, v = Y / (K * Math.sin(c.elev)), sA = Math.sin(c.az), cA = Math.cos(c.az); return { x: u * sA + v * cA, y: -u * cA + v * sA };
+  }
   const toPlan = w => ({ x: +(w.x / model.k).toFixed(4), y: +(w.y * model.aspect / model.k).toFixed(4) });
   function snapToRoute(w) {
     let best = null;
@@ -840,8 +886,28 @@
       else { selObs = d.id; dragObs = null; ui(); }
       cv.dataset.dragged = d.moved ? '1' : '';
     });
+    // turn the view: drag to turn and tilt (one finger sideways on a phone), scroll to zoom; "Reset view" or R goes back to the standard angle
+    const inMap = p => p.x < 1430 && p.y > 130 && p.y < 960;
+    cv.addEventListener('pointerdown', e => {
+      if (view !== '3d' || recState || placing || down || (e.pointerType === 'mouse' && e.button !== 0) || !inMap(toCanvas(e))) return;
+      orb = { id: e.pointerId, x: e.clientX, y: e.clientY, az0: az, el0: elev, moved: false, touch: e.pointerType === 'touch' };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) { /* the pointer is already gone */ }
+    });
+    cv.addEventListener('pointermove', e => {
+      if (!orb || e.pointerId !== orb.id) return;
+      const dx = e.clientX - orb.x, dy = e.clientY - orb.y; if (!orb.moved && Math.hypot(dx, dy) < 5) return;
+      orb.moved = true; const k = W / Math.max(1, cv.getBoundingClientRect().width);   // canvas pixels per screen pixel
+      az = orb.az0 + dx * k * 0.0042;
+      if (!orb.touch || presenting) elev = Math.max(ELEV_MIN, Math.min(ELEV_MAX, orb.el0 + dy * k * 0.0035));
+      cv.style.cursor = 'grabbing'; viewUi();
+    });
+    const endOrbit = e => { if (!orb || (e && e.pointerId !== orb.id)) return; if (orb.moved) cv.dataset.orbited = '1'; orb = null; cv.style.cursor = ''; };
+    cv.addEventListener('pointerup', endOrbit); cv.addEventListener('pointercancel', endOrbit);
+    cv.addEventListener('wheel', e => { if (recState || !inMap(toCanvas(e))) return; e.preventDefault(); zoom = Math.max(0.6, Math.min(3, zoom * Math.exp(-e.deltaY * 0.0012))); viewUi(); }, { passive: false });
+    $('#simReset').addEventListener('click', resetView);
     cv.addEventListener('mouseleave', () => { hover = null; });
     cv.addEventListener('click', e => {
+      if (cv.dataset.orbited) { cv.dataset.orbited = ''; return; }   // that was a drag to turn the view, not a click
       const p = toCanvas(e);
       if (mode === 'shift') {
         if (cv.dataset.dragged) { cv.dataset.dragged = ''; return; }
@@ -857,6 +923,7 @@
     document.addEventListener('keydown', onKey);
     document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && presenting) present(false); });   // Esc in real full screen
     ['mousemove', 'pointerdown'].forEach(ev => simEl().addEventListener(ev, wake, { passive: true }));
+    const HINT = 'Drag the picture to turn it · scroll to zoom'; setNote(HINT); setTimeout(() => { const n = $('#simNote'); if (n && n.textContent === HINT) setNote(''); }, 9000);
     last = performance.now(); raf = requestAnimationFrame(loop);
   }
   // called by the app whenever the proposal changes while the tab is open (and when the tab opens)

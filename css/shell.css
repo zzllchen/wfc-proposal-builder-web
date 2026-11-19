@@ -404,6 +404,7 @@ body[data-tab="concept"] #stageBar, body[data-tab="concept"] #stage, body[data-t
 .simplay { display: flex; gap: 8px; }
 #simPlay { min-width: 116px; }
 #simFull { margin-left: 2px; }
+#simCv[data-view="3d"] { cursor: grab; }
 
 /* the shift simulation: the row of what to simulate, the obstacle tools, the Settings and Results panel */
 #sim { position: relative; }
