@@ -129,6 +129,55 @@
   }
 
   /* ---------- the mini 3D AMR: the 1.5T pallet-jack AMR being proposed ---------- */
+
+  /* ---------- the drawing order: all the boxes of the scene (pallets, people, doors, obstacles, the AMR) are put in ONE order, pair by pair ----------
+     Two boxes standing on the floor are told apart by a line that runs between them (the "separating axis" of two rectangles): the box on the camera's side of that line
+     is in front. Boxes that overlap on the floor (a crate on its pallet) go lowest first. A sort by centre alone put a wide door or a person in front of what stood
+     before it, and drew whole lines on top of each other. Labels and rings are drawn after the boxes (later) or before them (the floor). */
+  let scene = null, deferred = null;
+  const later = fn => { if (deferred) deferred.push(fn); else fn(); };
+  const emit = parts => { if (scene) parts.forEach(q => scene.push(q)); else paintParts(parts); };
+  function paintParts(parts) { orderParts(parts).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone)); }
+  function orderParts(list) {
+    const n = list.length; if (n < 2) return list.slice();
+    if (!cam.iso) return list.slice().sort((a, b) => (a.z0 + a.z1) - (b.z0 + b.z1));
+    const dx = cam.dir[0], dy = cam.dir[1];
+    const it = list.map(q => {
+      const c = Math.cos(q.hd), sn = Math.sin(q.hd), hl = q.L / 2, hw = q.Wd / 2;
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (let k = 0; k < 8; k++) { const lx = k & 1 ? hl : -hl, ly = k & 2 ? hw : -hw, g = cam.P(q.cx + lx * c - ly * sn, q.cy + lx * sn + ly * c, k & 4 ? q.z1 : q.z0); if (g[0] < x0) x0 = g[0]; if (g[0] > x1) x1 = g[0]; if (g[1] < y0) y0 = g[1]; if (g[1] > y1) y1 = g[1]; }
+      return { q, a1: [c, sn], a2: [-sn, c], hl, hw, x0, x1, y0, y1, key: q.cx * dx + q.cy * dy + 0.0004 * (q.z0 + q.z1), indeg: 0, out: [], done: false };
+    });
+    // 1: A goes first (it is behind B), -1: B goes first, 0: it makes no difference
+    const rel = (A, B) => {
+      const tx = B.q.cx - A.q.cx, ty = B.q.cy - A.q.cy;
+      for (const u of [A.a1, A.a2, B.a1, B.a2]) {
+        const t = tx * u[0] + ty * u[1];
+        const rA = A.hl * Math.abs(A.a1[0] * u[0] + A.a1[1] * u[1]) + A.hw * Math.abs(A.a2[0] * u[0] + A.a2[1] * u[1]);
+        const rB = B.hl * Math.abs(B.a1[0] * u[0] + B.a1[1] * u[1]) + B.hw * Math.abs(B.a2[0] * u[0] + B.a2[1] * u[1]);
+        if (Math.abs(t) - rA - rB > -1e-4) {   // a gap, or just touching, along this line
+          const side = (t >= 0 ? 1 : -1) * (u[0] * dx + u[1] * dy);   // above 0: B is on the camera's side
+          if (side > 0.05) return 1; if (side < -0.05) return -1;
+        }
+      }
+      if (A.q.z1 <= B.q.z0 + 1e-3) return 1;   // they overlap on the floor: the lower one first
+      if (B.q.z1 <= A.q.z0 + 1e-3) return -1;
+      return 0;
+    };
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const A = it[i], B = it[j];
+      if (A.x1 < B.x0 || B.x1 < A.x0 || A.y1 < B.y0 || B.y1 < A.y0) continue;   // they do not meet on the screen
+      const r = rel(A, B); if (r > 0) { A.out.push(B); B.indeg++; } else if (r < 0) { B.out.push(A); A.indeg++; }
+    }
+    const res = []; let left = n;
+    while (left) {
+      let best = null;
+      for (const a of it) if (!a.done && a.indeg <= 0 && (!best || a.key < best.key)) best = a;
+      if (!best) for (const a of it) if (!a.done && (!best || a.key < best.key)) best = a;   // a loop of boxes in front of each other: the farthest goes first
+      best.done = true; left--; res.push(best.q); for (const b of best.out) b.indeg--;
+    }
+    return res;
+  }
   // a box seen from the camera: sides first (far to near), then the lid
   function box(x, y, hd, L, Wd, z0, z1, tone) {
     const c = Math.cos(hd), sn = Math.sin(hd), loc = [[-L / 2, -Wd / 2], [L / 2, -Wd / 2], [L / 2, Wd / 2], [-L / 2, Wd / 2]].map(p => [x + p[0] * c - p[1] * sn, y + p[0] * sn + p[1] * c]);
@@ -180,8 +229,7 @@
     parts.push(part(s, -0.50, -0.44, -0.22, -0.15, 0.60, 0.67, T.red));                                                                        // emergency stop
     if (blink) parts.push(part(s, -0.83, -0.77, -0.03, 0.03, 1.40, 1.47, T.amber));                                                            // beacon
     if (s.laden) palletParts(s.x + c * 0.47 * vz, s.y + sn * 0.47 * vz, s.heading, lift).forEach(q => parts.push(q));
-    parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
-    parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
+    emit(parts);
   }
   function drawAmr(s, name) {
     const a0 = wall() * 3.2, g0 = toScreen(s.x, s.y, 0), R0 = 9;   // the floor under it: a slow lidar sweep and a soft ring
@@ -194,11 +242,13 @@
       const g2 = [[-L, -Wd], [L, -Wd], [L, Wd], [-L, Wd]].map(p => toScreen(cxw + p[0] * c - p[1] * sn, cyw + p[0] * sn + p[1] * c, 0)); ctx.save(); ctx.globalAlpha = al; ctx.fillStyle = INK; ctx.beginPath(); g2.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.fill(); ctx.restore(); });
     drawAmrScene(s, false);
     // a live tag above it
+    later(() => {
     const top = toScreen(s.x, s.y, 1.5 * VIZ), tx = Math.max(MAP.x + 130, Math.min(MAP.x + MAP.w - 130, top[0])), ty = Math.max(MAP.y + 34, top[1] - 40);
     ctx.save(); ctx.strokeStyle = 'rgba(11,18,32,.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(tx, ty + 24); ctx.lineTo(top[0], top[1] + 6); ctx.stroke();
     ctx.shadowColor = 'rgba(11,18,32,.22)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 5; ctx.fillStyle = INK; rr(ctx, tx - 120, ty - 24, 240, 48, 14); ctx.fill(); ctx.restore();
     ctx.save(); ctx.fillStyle = s.speed > 0 ? '#4ADE80' : AMBER; ctx.beginPath(); ctx.arc(tx - 98, ty, 6, 0, 7); ctx.fill(); ctx.restore();
     txt(name || 'AMR 01', tx - 82, ty + 7, 20, 700, '#fff'); txt(`${fmt(s.speed, 2)} m/s`, tx + 106, ty + 7, 19, 500, '#B9C6E8', 'right');
+    });
   }
   // a life-size close-up of the AMR in the corner of the map, turning as it turns, with what it is doing and the forks' lift as live readings
   let CU = { x: 1070, y: 160, w: 330, h: 270 };
@@ -384,16 +434,15 @@
       personParts(sx, sy, L.hd + Math.PI / 2, st.producing && !lit).forEach(q => parts.push(q));
       const bx = px - nx * 0.6 * VIZ + c * 0.55 * VIZ, by = py - ny * 0.6 * VIZ + sn * 0.55 * VIZ;
       parts.push(part({ x: bx, y: by, heading: L.hd }, -0.04, 0.04, -0.04, 0.04, 0, 1.05, T.grey), part({ x: bx, y: by, heading: L.hd }, -0.08, 0.08, -0.08, 0.08, 1.05, 1.2, lit ? (st.finished ? T.amber : ['#7DF0A8', '#2DBE6C']) : T.dark));
-      parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
-      parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
+      emit(parts);
       if (L.li === serving) { ctx.save(); ctx.strokeStyle = BLUE; ctx.lineWidth = 3; ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.ellipse(g[0], g[1], 44, (cam.iso ? 26 * SQ() : 44), 0, 0, 7); ctx.stroke(); ctx.restore(); }
       // a pallet is ready: a small white capsule with an amber dot (the same dot as "Ready" in the panel); the number only when more than one is waiting
-      if (st.waiting > 0) {
+      if (st.waiting > 0) later(() => {
         const top = toScreen(px, py, 1.3 * VIZ), many = st.waiting > 1, w = many ? 46 : 26, h = 26, x0 = top[0] - w / 2, y0 = top[1] - 30;
         ctx.save(); ctx.shadowColor = 'rgba(11,18,32,.22)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2; ctx.fillStyle = 'rgba(255,255,255,.96)'; rr(ctx, x0, y0, w, h, 13); ctx.fill(); ctx.restore();
         ctx.save(); ctx.fillStyle = AMBER; ctx.beginPath(); ctx.arc(x0 + 13, y0 + 13, 6, 0, 7); ctx.fill(); ctx.restore();
         if (many) txt(String(st.waiting), x0 + 26, y0 + 19.5, 16, 700, INK);
-      }
+      });
     });
   }
   // a roll-up door: two posts, the housing on top, the shutter rolling up as it opens; a light that is red (closed), amber (moving) or green (open)
@@ -413,12 +462,11 @@
       parts.push(post(-1), post(1));
       const z0 = (st.open * Hd) / VIZ; if (st.open < 0.98) parts.push(part(s0, -0.03, 0.03, -Wd / 2 / VIZ, Wd / 2 / VIZ, z0, Hd / VIZ, ['#C9D3E6', '#AEB9CE']));
       parts.push(part(s0, -0.09, 0.09, -Wd / 2 / VIZ - 0.05, Wd / 2 / VIZ + 0.05, Hd / VIZ, Hd / VIZ + 0.12, ['#8A96AD', '#6A7487']));
-      parts.forEach(q => { q.key = cam.iso ? (q.cx * cam.dir[0] + q.cy * cam.dir[1]) * Math.SQRT2 + 0.0004 * (q.z0 + q.z1) : (q.z0 + q.z1); });
-      parts.sort((a, b) => a.key - b.key).forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
-      const top = toScreen(d.x, d.y, Hd + 0.3 * VIZ), lab = 'Door · ' + st.label, w = width(lab, 16, 700) + 40;
+      emit(parts);
+      later(() => { const top = toScreen(d.x, d.y, Hd + 0.3 * VIZ), lab = 'Door · ' + st.label, w = width(lab, 16, 700) + 40;
       ctx.save(); ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.strokeStyle = 'rgba(11,18,32,.12)'; ctx.lineWidth = 1.5; rr(ctx, top[0] - w / 2, top[1] - 34, w, 30, 15); ctx.fill(); ctx.stroke();
       ctx.fillStyle = st.col; ctx.beginPath(); ctx.arc(top[0] - w / 2 + 16, top[1] - 19, 6, 0, 7); ctx.fill(); ctx.restore();
-      txt(lab, top[0] - w / 2 + 28, top[1] - 13, 16, 700, INK);
+      txt(lab, top[0] - w / 2 + 28, top[1] - 13, 16, 700, INK); });
     });
   }
   // an obstacle (a person or a trolley in the way): orange, with a ring; red and pulsing while an AMR waits for it; it steps aside as the AMR passes
@@ -431,9 +479,9 @@
       ctx.save(); ctx.setLineDash(blocked ? [] : [6, 6]); ctx.strokeStyle = blocked ? `rgba(216,54,47,${0.9 - ph * 0.5})` : sel ? BLUE : 'rgba(240,140,36,.8)'; ctx.lineWidth = blocked ? 5 : 3;
       ctx.beginPath(); ctx.ellipse(g[0], g[1], 30 + (blocked ? ph * 10 : 0), ((cam.iso ? 18 * SQ() : 30)) + (blocked ? ph * 6 : 0), 0, 0, 7); ctx.stroke(); ctx.restore();
       const s0 = { x, y, heading: ang }, parts = [part(s0, -0.16, 0.16, -0.16, 0.16, 0, 0.5, [ORANGE, '#C96A10']), part(s0, -0.165, 0.165, -0.165, 0.165, 0.2, 0.28, ['#FFFFFF', '#E8ECF3']), part(s0, -0.06, 0.06, -0.06, 0.06, 0.5, 0.6, T.dark)];
-      parts.forEach(q => box(q.cx, q.cy, q.hd, q.L, q.Wd, q.z0, q.z1, q.tone));
-      if (blocked) { const top = toScreen(x, y, 0.9 * VIZ), lab = `Waiting · clears in ${Math.ceil(ev.t1 - tt)} s`, w = width(lab, 15, 700) + 26; ctx.save(); ctx.fillStyle = '#D8362F'; rr(ctx, top[0] - w / 2, top[1] - 30, w, 28, 14); ctx.fill(); ctx.restore(); txt(lab, top[0], top[1] - 11, 15, 700, '#fff', 'center'); }
-      else if (b.onRoute === false && !dragObs) { const top = toScreen(x, y, 0.9 * VIZ); txt('Not on a route', top[0], top[1] - 10, 15, 600, MUTE, 'center'); }
+      emit(parts);
+      later(() => { if (blocked) { const top = toScreen(x, y, 0.9 * VIZ), lab = `Waiting · clears in ${Math.ceil(ev.t1 - tt)} s`, w = width(lab, 15, 700) + 26; ctx.save(); ctx.fillStyle = '#D8362F'; rr(ctx, top[0] - w / 2, top[1] - 30, w, 28, 14); ctx.fill(); ctx.restore(); txt(lab, top[0], top[1] - 11, 15, 700, '#fff', 'center'); }
+      else if (b.onRoute === false && !dragObs) { const top = toScreen(x, y, 0.9 * VIZ); txt('Not on a route', top[0], top[1] - 10, 15, 600, MUTE, 'center'); } });
     });
   }
   // the live panel on the right, the four counters, the timeline of the shift
@@ -626,8 +674,10 @@
     ctx.save(); clipWorld();
     drawFocus(info);
     sts.forEach((s, i) => { if (s.jobRef && !s.jobRef.service) drawProgress(s, ops.amrs[i].model); });
+    scene = []; deferred = [];
     drawLines(tt, serving); drawDoors(tt); drawObstacles(tt);
     sts.forEach((s, i) => { drawAmr(s, 'AMR ' + String(i + 1).padStart(2, '0')); picks.push({ kind: 'amr', id: i, wx: s.x, wy: s.y, wz: 0.7 * VIZ, r: 64 }); });
+    const boxes = scene, labels = deferred; scene = null; deferred = null; paintParts(boxes); labels.forEach(f => f());
     ctx.restore();
     if (dash) { hits = []; drawOverlays(); updatePanels(tt, sts); } else { drawCloseup(s0); drawHudOps(tt, sts); }
     drawInspector(info);
@@ -1141,6 +1191,7 @@
   }
   root.WFCSimUI = {
     update, frame: tt => { if (model && model.ok) frame(tt); },
+    view: o => { if (o.az !== undefined) az = gl.az = o.az; if (o.elev !== undefined) elev = gl.elev = o.elev; if (o.zoom !== undefined) zoom = gl.zoom = o.zoom; if (o.px !== undefined) pan.x = gl.px = o.px; if (o.py !== undefined) pan.y = gl.py = o.py; viewUi(); },
     tick: (dt, n) => { for (let i = 0; i < (n || 1); i++) { if (playing && model && model.ok) t += dt * speedF; if (model && model.ok) { stepCam(dt); frame(t); } } },   // advance by hand (for tests and recordings)
     camera: () => ({ az, elev, zoom, pan: { x: pan.x, y: pan.y }, spin, follow, picked }),
     picks: () => { const c = camera(); return picks.map(h => ({ kind: h.kind, id: h.id, at: c.P(h.wx, h.wy, h.wz).map(Math.round) })); },
