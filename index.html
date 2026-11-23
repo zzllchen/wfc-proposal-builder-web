@@ -17,6 +17,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/shell.css">
+<link rel="stylesheet" href="css/quote.css">
 </head>
 <body data-pane="form">
 <div id="app">
@@ -26,7 +27,7 @@
       <button class="tab active" data-tab="proposal" aria-current="page">Proposal</button>
       <button class="tab" data-tab="sim" title="The layout and the AMR in 3D, with live readings">Simulation</button>
       <button class="tab" data-tab="concept" title="The 3D concept video and the recorded simulation">Concept video</button>
-      <button class="tab" disabled aria-disabled="true" title="Coming soon">Quotation <span class="soon">Soon</span></button>
+      <button class="tab" data-tab="quote" title="The price, the terms and the quotation as its own A4 PDF">Quotation</button>
     </nav>
     <div class="sp"></div>
     <button id="docsShow" type="button" class="btn quiet" hidden title="Show the proposal tabs" aria-label="Show the proposal tabs"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span class="lbl" id="docsShowName">Proposals</span></button>
@@ -141,6 +142,18 @@
       </div>
       <aside id="simSheet" class="simsheet" hidden aria-label="Simulation details"><div class="shead"><h3 id="sheetTitle">Results</h3><button type="button" class="x" id="sheetClose" aria-label="Close">×</button></div><div class="shbody" id="sheetBody"></div></aside>
     </section>
+    <section id="quote" hidden aria-label="Quotation" data-qm="edit">
+      <header class="qbar">
+        <h2>Quotation</h2><span id="qStatus" class="qchip">Ready</span>
+        <div class="sp"></div>
+        <div class="seg qmode" id="qMode" role="group" aria-label="Edit or preview"><button type="button" class="tab active" data-qm="edit">Edit</button><button type="button" class="tab" data-qm="preview">Preview</button></div>
+      </header>
+      <div class="qbody">
+        <div class="qedit" id="qEdit"></div>
+        <div class="qprev" id="qPrev"><div class="qsheetwrap"><div class="qsheet" id="qSheet"></div></div></div>
+      </div>
+      <footer class="qtotal" id="qTotal" aria-live="polite"></footer>
+    </section>
     <section id="concept" hidden>
       <div class="cvbar">
         <div id="cvSwitch" class="seg" aria-label="Video"><button class="tab active" data-v="ai">3D concept</button><button class="tab" data-v="sim">Simulation recording</button></div>
@@ -184,6 +197,7 @@
 <script src="js/floor.js"></script>
 <script src="js/presets.js"></script>
 <script src="js/slides.js"></script>
+<script src="js/quote.js"></script>
 <script src="js/layout-editor.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/ops.js"></script>

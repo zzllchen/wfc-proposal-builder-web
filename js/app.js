@@ -5,7 +5,7 @@
   const C = WFCCalc, DB = WFCDB, SL = WFCSlides, num = C.num, esc = SL.esc;
   const LS = 'wfc-proposal-builder-v3', LS_OLD = 'wfc-proposal-builder-v2', APP_TITLE = 'Proposal Builder · WFC Systems';
   const qs = new URLSearchParams(location.search);
-  const printMode = !!qs.get('print');
+  const printMode = !!qs.get('print'), printDoc = qs.get('doc') || '';   // doc=quotation: the page prints the quotation instead of the slides
   const volatile = !!(qs.get('preset') || qs.get('state'));   // ?preset= is a throwaway preview: never overwrite the saved proposals
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
@@ -82,9 +82,9 @@
   }
   // Proposal and Simulation are two views of the same open proposal; the simulation redraws whenever the proposal changes
   function setTab(name) {
-    document.body.dataset.tab = name; $$('#tabs .tab').forEach(x => x.classList.toggle('active', x.dataset.tab === name)); $('#sim').hidden = name !== 'sim'; $('#concept').hidden = name !== 'concept';
+    document.body.dataset.tab = name; $$('#tabs .tab').forEach(x => x.classList.toggle('active', x.dataset.tab === name)); $('#sim').hidden = name !== 'sim'; $('#concept').hidden = name !== 'concept'; $('#quote').hidden = name !== 'quote'; $('#btnPdf').title = name === 'quote' ? 'Download the quotation as a PDF' : 'Download the proposal as a PDF';
     if (name !== 'concept' && window.WFCConcept) WFCConcept.stop();
-    if (name === 'sim') { closeEditor(); if (window.WFCSimUI) WFCSimUI.update(S, D); } else if (name === 'concept') { closeEditor(); if (window.WFCConcept) WFCConcept.update(S); } else { stageHtml = ''; flush(); }
+    if (name === 'sim') { closeEditor(); if (window.WFCSimUI) WFCSimUI.update(S, D); } else if (name === 'concept') { closeEditor(); if (window.WFCConcept) WFCConcept.update(S); } else if (name === 'quote') { closeEditor(); if (window.WFCQuote) WFCQuote.update(S, derive()); } else { stageHtml = ''; flush(); }
   }
   function renderScroll() {
     if (viewMode !== 'scroll') return;
@@ -407,6 +407,7 @@
     drawStage(); renderFleetBox(); updateSubs(); markMissing(); scheduleFilm(); renderTabs(); renderScroll();
     if (document.body.dataset.tab === 'sim' && window.WFCSimUI) WFCSimUI.update(S, D);
     if (document.body.dataset.tab === 'concept' && window.WFCConcept) WFCConcept.update(S);
+    if (document.body.dataset.tab === 'quote' && window.WFCQuote) WFCQuote.update(S, D);
   }
   let raf = 0;
   function refresh() { persist(); if (raf) return; raf = requestAnimationFrame(() => { raf = 0; renderAll(); }); }
@@ -517,9 +518,9 @@
   }
 
   /* ---------- files ---------- */
-  function fileBase() { return `${S.client.name || 'Client'} - ${S.title} Proposal`.replace(/[\\/:*?"<>|]+/g, ' '); }
-  function fillPrint() { $('#printRoot').innerHTML = included().map((s, i) => wrapSlide(s, i + 1)).join(''); }
-  function printPdf() { renderAll(); fillPrint(); document.title = fileBase(); setTimeout(() => window.print(), 80); }
+  function fileBase(doc) { return `${S.client.name || 'Client'} - ${S.title} ${doc === 'quotation' ? 'Quotation' : 'Proposal'}`.replace(/[\\/:*?"<>|]+/g, ' '); }
+  function fillPrint(doc) { const q = (doc || printDoc) === 'quotation' && window.WFCQuote; $('#printRoot').innerHTML = q ? WFCQuote.printHtml(S, D) : included().map((s, i) => wrapSlide(s, i + 1)).join(''); }
+  function printPdf(doc) { renderAll(); fillPrint(doc); document.title = fileBase(doc); setTimeout(() => window.print(), 80); }
 
   /* ---------- PDF and PowerPoint ----------
      Run from Start.bat, the local server prints a clean PDF (no header or footer) and the PowerPoint is built from it, one picture per slide.
@@ -532,8 +533,8 @@
     try { const r = await fetch('api/ping', { cache: 'no-store' }); serverOk = r.ok && (await r.json()).ok === true; } catch (e) { serverOk = false; }
     return serverOk;
   }
-  async function serverPdf() {
-    const r = await fetch('api/pdf', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S) });
+  async function serverPdf(doc) {
+    const r = await fetch('api/pdf' + (doc ? '?doc=' + doc : ''), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S) });
     if (!r.ok) { let m = ''; try { m = (await r.json()).error; } catch (e) { /* not JSON */ } throw new Error(m || 'The PDF could not be made.'); }
     return r.blob();
   }
@@ -542,9 +543,10 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   }
   async function savePdf() {
-    if (!(await hasServer())) { hint('In the print window, untick “Headers and footers”'); printPdf(); return; }
+    const doc = document.body.dataset.tab === 'quote' ? 'quotation' : '';
+    if (!(await hasServer())) { hint('In the print window, untick “Headers and footers”'); printPdf(doc); return; }
     busy(true); hint('Making the PDF…');
-    try { download(await serverPdf(), fileBase() + '.pdf'); hint('PDF saved to your Downloads folder'); }
+    try { download(await serverPdf(doc), fileBase(doc) + '.pdf'); hint('PDF saved to your Downloads folder'); }
     catch (e) { hint('PDF failed: ' + (e.message || e)); }
     busy(false);
   }
@@ -616,7 +618,7 @@
     if (location.protocol === 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) { const b = $('#btnPptx'); if (b) b.style.display = 'none'; }
     WFCConnect.onChange(() => { const p = $('.pbtns'), f = p && p.closest('.f'); if (f) f.outerHTML = palletAiHtml(); });   // the close-up buttons follow the connections
     if (printMode) {
-      document.body.classList.add('printmode'); document.title = fileBase(); fillPrint();
+      document.body.classList.add('printmode'); document.title = fileBase(printDoc); fillPrint();
       // the layout slide needs the picture's proportions (to place the drawn plan), so draw the pages again once they are known
       const pic = new Promise(res => { const t = setInterval(() => { if (!S.images.layout || imgAspect(S.images.layout)) { clearInterval(t); res(); } }, 40); });
       Promise.all([document.fonts ? document.fonts.ready : Promise.resolve(), pic]).then(() => { renderAll(); fillPrint(); window.__ready = true; });

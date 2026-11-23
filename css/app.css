@@ -66,3 +66,9 @@
 }
 body.printmode #app { display: none; }
 body.printmode #printRoot { display: block; }
+
+/* the quotation prints on A4 portrait pages (the slides are 1920 x 1080), with the page number in the footer */
+@page quote { size: A4; margin: 12mm 14mm 16mm; @bottom-left { content: "WFC Systems  \00B7  www.wfcsystems.com"; font: 9px "DM Sans", Arial, sans-serif; color: #8793A8; } @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9px "DM Sans", Arial, sans-serif; color: #8793A8; } }
+.qprint { page: quote; }
+@media print { .qprint .qdoc { padding: 0 !important; } .qprint { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+body.printmode .qprint .qdoc { padding: 0 !important; }

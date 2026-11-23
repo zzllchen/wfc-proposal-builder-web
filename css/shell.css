@@ -394,6 +394,7 @@ h3.warn .cnt { background: #FFF3BF; color: #6E5200; }
 
 /* ---------- Simulation tab ---------- */
 body[data-tab="sim"] #stageBar, body[data-tab="sim"] #stage, body[data-tab="sim"] #scroll, body[data-tab="sim"] #editor, body[data-tab="sim"] #film,
+body[data-tab="quote"] #stageBar, body[data-tab="quote"] #stage, body[data-tab="quote"] #scroll, body[data-tab="quote"] #editor, body[data-tab="quote"] #film,
 body[data-tab="concept"] #stageBar, body[data-tab="concept"] #stage, body[data-tab="concept"] #scroll, body[data-tab="concept"] #editor, body[data-tab="concept"] #film { display: none !important; }
 #sim { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
 #simStage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; background: #EEF1F7; border-radius: var(--r-lg); padding: 12px; overflow: hidden; }

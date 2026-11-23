@@ -76,7 +76,7 @@ def free_port():
         s.bind(('127.0.0.1', 0)); return s.getsockname()[1]
 
 
-def make_pdf(state_bytes):
+def make_pdf(state_bytes, doc=''):
     """Opens the proposal in a hidden browser, waits until the page says it is ready, and prints it (no header or footer)."""
     sid = uuid.uuid4().hex[:12]
     tmp = tempfile.mkdtemp(prefix='wfc-pdf-')
@@ -99,7 +99,7 @@ def make_pdf(state_bytes):
             raise RuntimeError('The browser did not start.')
         ws = WebSocket(target['webSocketDebuggerUrl'])
         ws.call('Page.enable')
-        ws.call('Page.navigate', {'url': 'http://127.0.0.1:%d/index.html?print=1&state=%s' % (PORT, sid)})
+        ws.call('Page.navigate', {'url': 'http://127.0.0.1:%d/index.html?print=1&state=%s%s' % (PORT, sid, ('&doc=' + doc) if doc else '')})
         deadline = time.time() + 90
         while time.time() < deadline:
             r = ws.call('Runtime.evaluate', {'expression': 'window.__ready === true', 'returnByValue': True})
@@ -167,6 +167,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_POST(self):
         if urllib.parse.urlparse(self.path).path != '/api/pdf':
             return self._json(404, {'error': 'not found'})
+        doc = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('doc') or [''])[0]
+        doc = doc if doc in ('quotation',) else ''
         if not BROWSER:
             return self._json(500, {'error': 'Microsoft Edge or Google Chrome was not found on this PC.'})
         n = int(self.headers.get('Content-Length', '0'))
@@ -179,7 +181,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self._json(400, {'error': 'That is not a proposal.'})
         with LOCK:   # one PDF at a time
             try:
-                pdf = make_pdf(body)
+                pdf = make_pdf(body, doc)
             except Exception as e:   # noqa: BLE001
                 return self._json(500, {'error': str(e)})
         self._send(200, pdf, 'application/pdf')
