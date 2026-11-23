@@ -26,7 +26,7 @@
   const longDate = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); if (!m) return iso || ''; return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); };
   const addDays = (iso, n) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3] + n); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 
-  /* ---------- the wording (taken from WFC's own quotations; the late-penalty and cancellation terms are from the 21 Sep SKF rental quotation) ---------- */
+  /* ---------- the wording (taken from WFC's own quotations; the late-penalty and cancellation terms are from the 21 Sep rental quotation) ---------- */
   const T_ = {
     delivery: 'DDP to your factory',
     periodRent: '3.5 months from PO confirmation date (excludes installation & commissioning)',
@@ -179,7 +179,7 @@
     const L = rowsFor(S, D, Q, ty, ty === Q.type).map(calcRow), inc = L.filter(l => l.on), T = { rent };
     if (rent) {
       const su = sect(inc.filter(l => !l.monthly), tax, Q.disc), mo = sect(inc.filter(l => l.monthly), tax, null);
-      T.setup = su; T.month = mo; T.upfront = round2(su.grand + mo.grand); T.deposit = round2(T.upfront / 2); T.balance = round2(T.upfront - T.deposit);   // 50% of the initial payment on PO, 50% on completion (the 21 Sep SKF quotation)
+      T.setup = su; T.month = mo; T.upfront = round2(su.grand + mo.grand); T.deposit = round2(T.upfront / 2); T.balance = round2(T.upfront - T.deposit);   // 50% of the initial payment on PO, 50% on completion (the 21 Sep rental quotation)
       const red = Math.min(Math.max(num(Q.optB.reduction), 0), su.grand), months = Math.max(num(Q.optB.months, 12), 1);
       T.optB = Q.optB.on && red > 0 ? { setup: su.grand - red, y1: mo.grand + red / months, monthly: mo.grand, months, reduction: red, upfront: su.grand - red + mo.grand + red / months } : null;
     } else {
@@ -196,7 +196,7 @@
     if (inc.some(l => l.est)) add('The monthly rent is estimated from the 1.5T rental rate: confirm it', 'price');
     if (Q.tbc.tax) add(`The tax rate (${Q.taxLabel || 'tax'} ${tax}%) is not confirmed: check it with accounts`, 'tax', true);
     if (!String(((Q.terms.find(t => t.id === 'period') || {}).v) || '').trim()) add('The delivery period is blank', 'period');
-    else if (Q.tbc.period) add('The delivery period is the standard one from the SKF quotation: confirm it for this job', 'period', true);
+    else if (Q.tbc.period) add('The delivery period is the standard one from the last rental quotation: confirm it for this job', 'period', true);
     const bi = Q.bankInfo || {}; if (!(bi.bank && bi.no)) add('The bank details are blank, so they are not printed', 'bank');
     if (!String(headVal(S, Q, 'contact') || '').trim()) add('Your contact person is blank', 'contact');
     return { lines: L, totals: T, checks: info.map(i => i.msg), checkInfo: info, Q, type: ty };
