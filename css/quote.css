@@ -148,6 +148,68 @@
   .qs-b { padding: 4px 14px 14px; }
 }
 
+/* ---------- the Costing view (internal) ---------- */
+.qcost { display: none; container: qc / inline-size; min-height: 0; min-width: 0; overflow: auto; padding: 2px 4px 24px 2px; scrollbar-width: thin; }
+#quote[data-qm="cost"] .qbody { grid-template-columns: minmax(0, 1fr); }
+#quote[data-qm="cost"] .qmain, #quote[data-qm="cost"] .qrail, #quote[data-qm="cost"] .qprev { display: none; }
+#quote[data-qm="cost"] .qcost { display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "note note" "table side"; gap: 14px 16px; align-content: start; }
+.qc-note { grid-area: note; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: #0B1220; color: #E9EEF8; font-size: 13px; line-height: 1.45; }
+.qc-note svg { flex: none; color: #F2C14E; }
+.qc-note b { color: #fff; }
+.qc-side { grid-area: side; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.qc-table { grid-area: table; min-width: 0; background: #fff; border-radius: 16px; box-shadow: 0 6px 22px rgba(11,18,32,.07), 0 1px 2px rgba(11,18,32,.05); padding: 6px 16px 14px; }
+.qc-g, .qc-tools { background: #fff; border-radius: 16px; padding: 14px 16px; box-shadow: 0 6px 22px rgba(11,18,32,.07), 0 1px 2px rgba(11,18,32,.05); }
+.qc-g { margin-bottom: 12px; }
+.qc-g h3, .qc-tools h3 { margin: 0 0 10px; font-size: 11.5px; letter-spacing: .09em; text-transform: uppercase; color: #204CBA; }
+.qc-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+.qc-s small { display: block; font-size: 11.5px; color: #5B6577; line-height: 1.3; }
+.qc-s b { font-size: 16px; color: #0B1220; font-variant-numeric: tabular-nums; }
+.qc-s.pos b { color: #11713F; } .qc-s.neg b { color: #B42318; }
+.qc-tl { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; }
+.qc-tl .qf { flex: 1; margin: 0; min-width: 0; }
+.qc-tl .btn { flex: none; }
+.qc-msg { margin: 12px 0 0; min-height: 1.4em; font-size: 12.5px; line-height: 1.45; color: #11713F; }
+.qc-msg.bad { color: #B42318; }
+.qc-head, .qc-row { display: grid; grid-template-columns: 40px minmax(0, 1fr) 56px 100px 70px 100px 56px 96px 96px; column-gap: 8px; align-items: center; }
+.qc-head { padding: 12px 0 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #8793A8; }
+.qc-head span:nth-child(n+3) { text-align: right; }
+.qc-row { padding: 9px 0; border-top: 1px solid #EEF1F6; }
+.qc-row.off .qc-name, .qc-row.off .qc-t, .qc-row.off .qc-p { opacity: .45; }
+.qc-name b { display: block; font-size: 13px; line-height: 1.3; color: #0B1220; }
+.qc-name small { display: block; margin-top: 1px; font-size: 11.5px; color: #5B6577; }
+.qc-name .q-opt { font-style: normal; font-size: 9px; font-weight: 700; background: #FFF1C9; color: #8A5A00; padding: 1px 7px; border-radius: 99px; margin-left: 4px; }
+.qc-f { display: block; min-width: 0; }
+.qc-f::before, .qc-t::before, .qc-p::before { display: none; }
+.qc-row .cell { width: 100%; min-height: 34px; padding: 3px 7px; border: 1px solid #E1E6F0; border-radius: 8px; background: #fff; font: inherit; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.qc-row .cell:hover { border-color: #C9D8F8; background: #F8FAFF; }
+.qc-row .cell:focus { outline: 0; border-color: #2F5BD0; box-shadow: 0 0 0 3px rgba(47,91,208,.15); }
+.qc-row .cell:disabled { background: #F4F6FA; color: #A5AFC2; border-style: dashed; }
+.qc-row .cell.bad { border-color: #E3A21A; background: #FFF8E1; }
+.qc-t, .qc-p { text-align: right; font-variant-numeric: tabular-nums; }
+.qc-t b, .qc-p b { font-size: 13px; color: #0B1220; }
+.qc-p small { display: block; font-size: 11px; color: #5B6577; }
+.qc-addhint { margin-top: 10px; }
+.qtotal.int { background: #0B1220; box-shadow: none; }
+.qtotal.int .qb-s small { color: #9AA6BD; } .qtotal.int .qb-s b { color: #fff; } .qtotal.int .qb-s.hi b { color: #7FE0A6; }
+.q-prof { font-size: 10.5px; font-weight: 600; color: #11713F; }
+@container quote (max-width: 1099px) {
+  #quote[data-qm="cost"] .qcost { grid-template-columns: minmax(0, 1fr); grid-template-areas: "note" "side" "table"; }
+}
+@container qc (max-width: 760px) {
+  .qc-head { display: none; }
+  .qc-row { grid-template-columns: 44px repeat(2, minmax(0, 1fr)); gap: 10px 12px; padding: 14px 0; align-items: end; }
+  .qc-row > .sw { align-self: start; margin-top: 2px; }
+  .qc-name { grid-column: 2 / -1; }
+  .qc-f, .qc-t, .qc-p { text-align: left; }
+  .qc-f::before, .qc-t::before, .qc-p::before { display: block; content: attr(data-l); margin-bottom: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: #8793A8; }
+  .qc-row .cell { min-height: 44px; font-size: 15px; text-align: left; }
+  .qc-row > [data-l="Qty"], .qc-row > [data-l="Markup %"], .qc-row > [data-l="Disc. %"] { grid-column: 2; }
+  .qc-row > [data-l="Our unit cost"], .qc-row > [data-l="Unit price"], .qc-row > .qc-t { grid-column: 3; }
+  .qc-row > .qc-p { grid-column: 2 / span 2; }
+  .qc-row.off > :not(.sw):not(.qc-name) { display: none; }
+}
+@container quote (max-width: 600px) { .qtotal.int { gap: 6px 10px; padding: 10px 12px; } .qtotal.int .qb-s b { font-size: 12px; } .qtotal.int .qb-s small { font-size: 10px; } .qc-tl { flex-direction: column; align-items: stretch; } .qc-stats { grid-template-columns: 1fr 1fr; } }
+
 /* ---------- the quotation page (A4) ---------- */
 .qdoc { padding: 14mm; font: 11px/1.42 "DM Sans", Arial, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; color: #0B1220; background: #fff; overflow-wrap: anywhere; }
 .qdoc * { box-sizing: border-box; }

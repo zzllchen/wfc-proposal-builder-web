@@ -91,7 +91,7 @@
     const Q = S.quote || (S.quote = {});
     const legacy = Q.v !== 2 ? { period: Q.period, delivery: Q.delivery, payment: Q.payment, warranty: Q.warranty, bank: Q.bank, exclusions: Q.exclusions, lines: Q.lines } : null;
     const d = { type: 'rent', termYears: 5, no: '', rev: 1, status: 'draft', date: '', validityDays: 30, currency: 'MYR', taxPct: num(DB.defaults && DB.defaults.taxPct, 0), taxLabel: 'SST', markup: defaultMarkup(), disc: { mode: 'pct', v: 0 },
-      head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: false, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
+      head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: true, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
     Q.v = 2;
     if (!Q.date) Q.date = (S.client && /^\d{4}-\d{2}-\d{2}/.test(S.client.date || '') && S.client.date.slice(0, 10)) || today();
@@ -130,7 +130,7 @@
       const P = C.purchaseLines({ unitPrice: M.unitPrice, rcsUnit: M.rcsUnit, rcsAtQty1: M.rcsAtQty1 }, qty, DB.defaults);
       const pl = Object.fromEntries(P.map(l => [l.id, l]));
       L.push({ id: 'hw', label: 'AMR hardware', sub: M.name, qty, uom: 'unit', base: pl.hw.base, taxable: true, cost: true, bullets: amr });
-      L.push({ id: 'rcs', label: 'Robot Control System (RCS) and system', qty: 1, uom: 'LOT', base: pl.rcs.base, taxable: true, cost: true,
+      if (pl.rcs.base > 0) L.push({ id: 'rcs', label: 'Robot Control System (RCS) and system', qty: 1, uom: 'LOT', base: pl.rcs.base, taxable: true, cost: true,   // (one unit of a model that does not include it has none: add it from Add an item)
         bullets: [SPEC.rcs[0], 'Perpetual licence including user management, map management and an operational dashboard'] });
       L.push({ id: 'custom', label: 'Customisation', qty: 1, uom: 'LOT', base: pl.custom.base, taxable: true, bullets: ['Setup of the AMR for the site and the pallet'] });
       L.push({ id: 'delivery', label: 'Delivery', qty: 1, uom: 'LOT', base: pl.delivery.base, taxable: true, bullets: [T_.delivery] });
@@ -185,14 +185,22 @@
     } else {
       T.sum = sect(inc, tax, Q.disc); const g = T.sum.grand; T.pay = [round2(g * 0.4), round2(g * 0.4), round2(g - round2(g * 0.4) * 2)];   // WFC's usual purchase terms: 40% on PO, 40% on stock arrival, 20% on completion
     }
-    const cl = inc.filter(l => l.cost);   // the supplier items: what they cost WFC, what they are sold for
-    T.hasCost = cl.length > 0; T.cost = cl.reduce((a, l) => a + l.base * l.qty, 0); T.sell = cl.reduce((a, l) => a + l.net, 0); T.marginPct = T.sell > 0 ? (T.sell - T.cost) / T.sell * 100 : 0;
+    // costing (internal, never printed): what each item costs WFC and what it is sold for, after discounts and before tax. The extra discount on the whole quotation is shared out across the items.
+    const fOf = l => { const s = rent ? (l.monthly ? null : T.setup) : T.sum; if (!s) return 1; const pre = s.net + s.extra; return pre > 0 ? s.net / pre : 1; };
+    const known = l => l.cost && l.base > 0;
+    inc.forEach(l => { l.sellX = round2(l.net * fOf(l)); l.profit = known(l) ? round2(l.sellX - l.base * l.qty) : null; l.marginPct = known(l) && l.sellX > 0 ? l.profit / l.sellX * 100 : 0; });
+    const grp = (key, label, rows, secNet) => {
+      const cr = rows.filter(known), un = rows.filter(l => !known(l)), cost = round2(cr.reduce((a, l) => a + l.base * l.qty, 0)), sell = round2(cr.reduce((a, l) => a + l.sellX, 0)), all = secNet;   // the section's own total, so the cents agree with the quotation
+      return { key, label, n: cr.length, un: un.length, unNames: un.map(l => l.name), cost, sell, total: all, unSell: round2(all - sell), profit: round2(sell - cost), marginPct: sell > 0 ? (sell - cost) / sell * 100 : 0, markupPct: cost > 0 ? (sell - cost) / cost * 100 : 0 };
+    };
+    T.groups = rent ? [grp('setup', 'One-time setup', inc.filter(l => !l.monthly), T.setup.net), grp('month', 'Monthly rental', inc.filter(l => l.monthly), T.month.net)] : [grp('all', 'The quotation', inc, T.sum.net)];
+    T.hasCost = T.groups.some(g => g.n > 0); T.cost = round2(T.groups.reduce((a, g) => a + g.cost, 0)); T.sell = round2(T.groups.reduce((a, g) => a + g.sell, 0)); T.marginPct = T.sell > 0 ? (T.sell - T.cost) / T.sell * 100 : 0;
     const info = [], add = (msg, key, confirm) => info.push({ msg, key, confirm: !!confirm });
     if (!(S.client && String(S.client.name || '').trim() || Q.head && Q.head.toName)) add('The customer name is blank', 'name');
     if (!inc.length) add('No item is included in the quotation', 'items');
     const badQty = inc.filter(l => !(l.qty > 0)); if (badQty.length) add(`${badQty.length} item${badQty.length > 1 ? 's have' : ' has'} no quantity: ${badQty.map(l => l.name).join(', ')}`, 'qty');
     const noPrice = inc.filter(l => !(l.unit > 0)); if (noPrice.length) add(`${noPrice.length} price${noPrice.length > 1 ? 's are' : ' is'} missing: ${noPrice.map(l => l.name).join(', ')}`, 'price');
-    if (T.hasCost && !(T.sell > T.cost + 0.005)) add('No markup: the AMR and RCS are at the selector tool cost price, so there is no margin', 'markup');
+    if (T.hasCost && !(T.sell > T.cost + 0.005)) add('No markup: the items with a cost are priced at cost, so there is no profit', 'markup');
     if (inc.some(l => l.est)) add('The monthly rent is estimated from the 1.5T rental rate: confirm it', 'price');
     if (Q.tbc.tax) add(`The tax rate (${Q.taxLabel || 'tax'} ${tax}%) is not confirmed: check it with accounts`, 'tax', true);
     if (!String(((Q.terms.find(t => t.id === 'period') || {}).v) || '').trim()) add('The delivery period is blank', 'period');
@@ -252,6 +260,37 @@
     Object.keys(Q.items || {}).forEach(t => Q.items[t].forEach(r => { if (r.cost && !(r.ed && r.ed.price)) r.pct = Q.markup; }));
   }
   function setPrice(r, v) { if (r.cost) C.setLinePrice(r, v); else { r.base = num(v); r.pct = 0; } r.ed = r.ed || {}; r.ed.price = 1; r.est = false; }
+  // what WFC pays for an item. Typing a cost on an item that was priced directly keeps its selling price as it is (the markup works out); clearing the cost turns it back into a plain price.
+  function setCost(r, v) {
+    const c = num(v), unit = round2(num(r.base) * (1 + (r.cost ? num(r.pct) : 0) / 100)); r.ed = r.ed || {}; r.ed.price = 1; r.est = false;
+    if (c > 0) { if (!r.cost) { r.cost = true; r.pct = unit > 0 ? (unit / c - 1) * 100 : 0; } r.base = c; }
+    else if (r.cost) { r.cost = false; r.base = unit; r.pct = 0; }
+  }
+
+  /* ---------- the pricing tools (internal): one markup for every costed item, a margin to aim for, a total to aim for, rounded prices ---------- */
+  const costedRows = (S, D) => { const Q = ensure(S, D); return rowsFor(S, D, Q, Q.type, true); };
+  function applyMarkup(S, D, pct) {   // returns how many items it was applied to
+    const Q = ensure(S, D), v = Math.max(0, num(pct)); let n = 0;
+    costedRows(S, D).forEach(r => { if (r.cost) { r.pct = v; r.ed = r.ed || {}; r.ed.price = 1; n++; } });
+    Q.markup = v; return n;
+  }
+  const marginToMarkup = m => { const x = Math.min(Math.max(num(m), 0), 95); return x / (100 - x) * 100; };   // a margin of 25% on the price is a markup of 33.3% on the cost
+  function solveTarget(S, D, target) {   // the markup that makes the total before tax (after discounts) come to the target; the items with no cost keep their price
+    const Q = ensure(S, D), rows = costedRows(S, D).map(calcRow).filter(l => l.on && (Q.type !== 'rent' || !l.monthly));
+    let A = 0, F = 0; rows.forEach(l => { if (l.cost && l.base > 0) A += l.qty * l.base * (1 - l.disc / 100); else F += l.net; });
+    const v = Math.max(0, num(Q.disc.v)), Y = Q.disc.mode === 'amt' ? num(target) + v : num(target) / (1 - Math.min(v, 99) / 100);
+    if (!(num(target) > 0)) return { ok: false, why: 'Type the total you want.' };
+    if (!(A > 0)) return { ok: false, why: 'No item has a cost yet: type a cost on an item first.' };
+    const k = (Y - F) / A - 1;
+    if (!(k >= 0)) return { ok: false, why: 'That total is lower than the cost of the items.' };
+    return { ok: true, pct: Math.round(k * 10000) / 100 };
+  }
+  function applyTarget(S, D, target) { const r = solveTarget(S, D, target); if (r.ok) r.n = applyMarkup(S, D, r.pct); return r; }
+  function roundUp(S, D, step) {   // every costed item's unit price up to a multiple of the step
+    const st = num(step); let n = 0; if (!(st > 0)) return 0;
+    costedRows(S, D).forEach(r => { if (!r.cost || !(num(r.base) > 0)) return; const unit = num(r.base) * (1 + num(r.pct) / 100), nu = Math.ceil(unit / st - 1e-9) * st; r.pct = (nu / r.base - 1) * 100; r.ed = r.ed || {}; r.ed.price = 1; n++; });
+    return n;
+  }
 
   /* ---------- the A4 document (also the editable page) ---------- */
   function termText(S, Q, t, R) {
@@ -267,6 +306,7 @@
     const block = (title, x, grandLabel) => `<table class="q-tot">${title ? `<caption>${title}</caption>` : ''}<tr><td>Subtotal</td><td>${money(x.subtotal)}</td></tr>${x.discount > 0 ? `<tr><td>Discount</td><td>- ${money(x.discount)}</td></tr>` : ''}${tx ? `<tr><td>${lab}</td><td>${money(x.tax)}</td></tr>` : ''}<tr class="b"><td>${grandLabel} (${esc(s)})</td><td>${money(x.grand)}</td></tr></table>`;
     return T.rent ? block('One-time setup', T.setup, 'Total one-time setup') + block('Monthly rental', T.month, 'Rental per month') : block('', T.sum, 'Total');
   }
+  const profText = (l, s) => (l.profit == null ? (l.on ? 'no cost yet' : '') : `profit ${s} ${money(l.profit)} · ${(Math.round(l.marginPct * 10) / 10).toFixed(1)}% margin`);
   function docHtml(S, D, opt) {
     const E = !!(opt && opt.edit), R = (opt && opt.R) || compute(S, D), Q = R.Q, T = R.totals, rent = T.rent, co = DB.company, M = (D && D.model) || {}, qty = Math.max(1, (D && D.qty) || 1), s = sym(Q);
     const hv = k => headVal(S, Q, k);
@@ -284,7 +324,7 @@
       return `<tr class="q-row${off ? ' q-off' : ''}" data-row="${esc(l.id)}">
         <td class="n"><span class="rn">${no}</span><label class="sw sm" title="Include this item in the quotation"><input type="checkbox" data-rk="on" ${l.on ? 'checked' : ''} aria-label="Include ${esc(l.name)}"><i></i></label></td>
         <td class="d">${ed('row.name', l.name, 'Item name', { cls: 'q-nm', label: 'Item name' })}${l.optional ? '<em class="q-opt">Optional</em>' : ''}${l.est ? '<em class="q-opt">Estimated</em>' : ''}<br>${ed('row.sub', l.sub, 'Description (for example the model)', { cls: 'q-sb', label: 'Description' })}<div class="q-sp">${ed('row.specs', l.specs, 'Specifications, one per line', { ml: 1, label: 'Specifications' })}</div>
-          ${Q.internal && l.cost ? `<div class="q-int"><label>Cost<span class="inpx">${rk('cost', l.base ? money(l.base) : '', '0.00', 'num', 'Cost price')}</span></label><label>Markup<span class="inpx">${rk('pct', l.pct ? +l.pct.toFixed(2) : '', '0', 'num', 'Markup percent')}<i>%</i></span></label><small>only you see this</small></div>` : ''}</td>
+          ${Q.internal ? `<div class="q-int"><label>Our cost<span class="inpx">${rk('cost', l.cost && l.base ? money(l.base) : '', 'add cost', 'num', 'Our cost')}</span></label><label>Markup<span class="inpx"><input class="cell num" inputmode="decimal" autocomplete="off" data-rk="pct" value="${l.cost && l.pct ? +l.pct.toFixed(2) : ''}" placeholder="${l.cost ? '0' : ''}" aria-label="Markup percent"${l.cost ? '' : ' disabled'}><i>%</i></span></label><span class="q-prof" data-prof>${profText(l, s)}</span><small>only you see this</small></div>` : ''}</td>
         <td class="c" data-l="Qty">${rk('qty', fmtQty(l.qty), '0', 'num', 'Quantity')}</td>
         <td class="c" data-l="Unit">${ed('row.uom', l.uom, 'unit', { label: 'Unit' })}</td>
         <td class="r" data-l="Unit price">${rk('price', l.unit > 0 ? money(l.unit) : '', '0.00', 'num' + (bad ? ' bad' : ''), 'Unit price')}</td>
@@ -515,12 +555,12 @@
       + (Q.currency !== 'MYR' ? '<p class="qnote">Prices are typed in this currency. Nothing is converted, and the standard RM amounts in the price list are not changed.</p>' : '')
       + `<div class="qgrid">${fld('Tax name', `<input data-qf="taxLabel" value="${esc(Q.taxLabel)}">`)}${fld('Tax rate', `<div class="inp"><input inputmode="decimal" data-qf="taxPct" value="${num(Q.taxPct)}"><i class="r">%</i></div>`)}</div>`
       + `<p class="qnote">${Q.tbc.tax ? '<span class="tbc">to confirm</span> ' : ''}The rate used in the selector tool, on every item except installation. Confirm it with accounts, then set 0 if tax is not charged.</p>`;
-    const price = fld('Markup on the AMR and RCS', `<div class="inp"><input inputmode="decimal" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
-      + '<p class="qnote">The selector tool prices for the AMR and the RCS are your cost: this is added on top (only you see it). Other items are selling prices; set any price on the page.</p>'
+    const price = fld('Standard markup on the cost', `<div class="inp"><input inputmode="decimal" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
+      + '<p class="qnote">The selector tool prices for the AMR and the RCS are your cost, so this markup is added on top (only you see it). Set a markup for every item, a margin or a total to aim for in the Costing view, and type a cost on any other item to price it the same way.</p>'
       + '<button type="button" class="btn quiet qsave" data-save-markup>Use this markup for new quotations</button>'
       + fld('Extra discount on the whole quotation', `${seg('disc.mode', Q.disc.mode, [['pct', '%'], ['amt', s]])}<div class="inp"><input inputmode="decimal" data-qf="disc.v" value="${num(Q.disc.v) || ''}" placeholder="0"><i class="r">${Q.disc.mode === 'pct' ? '%' : esc(s)}</i></div>`, '', 'div')
       + '<p class="qnote">Per-item discounts are in the table. For a rental, this one is taken off the one-time setup.</p>'
-      + tog('internal', Q.internal, 'Show cost and markup on the page', 'only you see these; they are never printed');
+      + tog('internal', Q.internal, 'Show our cost and profit on the page', 'only you see these; they are never printed. Switch off before sharing your screen.');
     const more = (rent ? tog('service', Q.service, 'Add the maintenance and service page') + (Q.service ? fld('Service visits a year', `<input inputmode="numeric" data-qf="perYear" value="${num(Q.perYear, 4)}">`, 'qf-s') : '')
         + tog('optB.on', Q.optB.on, 'Offer a lower setup fee (option B)', 'the saving is paid back through a higher rental for a while')
         + (Q.optB.on ? `<div class="qgrid">${fld('Reduce setup by', `<div class="inp"><i>${esc(s)}</i><input inputmode="decimal" data-qf="optB.reduction" value="${num(Q.optB.reduction) || ''}"></div>`)}${fld('Paid back over', `<div class="inp"><input inputmode="numeric" data-qf="optB.months" value="${num(Q.optB.months, 12)}"><i class="r">months</i></div>`)}</div>` : '') : '')
@@ -538,7 +578,9 @@
       row.classList.toggle('q-off', !l.on);
       const a = row.querySelector('[data-amt]'); if (a) a.innerHTML = l.on ? (l.unit > 0 ? money(l.net) : '') : '<span class="q-muted">not included</span>';
       const set = (k, v, bad) => { const i = row.querySelector(`[data-rk="${k}"]`); if (i && i !== document.activeElement) i.value = v; if (i && bad != null) i.classList.toggle('bad', bad); };
-      set('price', l.unit > 0 ? money(l.unit) : '', l.on && !(l.unit > 0)); set('cost', l.base ? money(l.base) : ''); set('pct', l.pct ? +l.pct.toFixed(2) : ''); set('disc', l.disc > 0 ? +l.disc.toFixed(2) : '');
+      set('price', l.unit > 0 ? money(l.unit) : '', l.on && !(l.unit > 0)); set('cost', l.cost && l.base ? money(l.base) : ''); set('pct', l.cost && l.pct ? +l.pct.toFixed(2) : ''); set('disc', l.disc > 0 ? +l.disc.toFixed(2) : '');
+      const pf = row.querySelector('[data-prof]'); if (pf) pf.textContent = profText(l, sym(R.Q));
+      const mk = row.querySelector('[data-rk="pct"]'); if (mk) { mk.disabled = !l.cost; mk.placeholder = l.cost ? '0' : ''; }
     });
     const t = $('#qTots'); if (t) t.innerHTML = totalsHtml(S0, R.Q, R);
     const u = $('.q-until'); if (u) u.textContent = 'until ' + longDate(addDays(R.Q.date, num(R.Q.validityDays, 30)));
@@ -550,14 +592,15 @@
     if (full) {
       const sy = $('#qMain') && $('#qMain').scrollTop, ry = rail.scrollTop;
       paper.innerHTML = docHtml(S0, D0, { edit: true, R }); rail.innerHTML = railHtml(R);
+      const cp = $('#qCost'); if (cp) { const cy = cp.scrollTop, ox = document.activeElement && document.activeElement.dataset && document.activeElement.dataset.ci; cp.innerHTML = costHtml(R); cp.scrollTop = cy; }
       if ($('#qMain') && sy) $('#qMain').scrollTop = sy; rail.scrollTop = ry;
     } else {
-      paintNumbers(R);
+      paintNumbers(R); paintCost(R);
       const c = $('#qCheck'); if (c) { const open = c.querySelector('details') && c.querySelector('details').open; c.innerHTML = checkHtml(R); if (open) { const d = c.querySelector('details'); if (d) d.open = true; } }
       const sm = summaries(R); Object.keys(sm).forEach(k => { const e = rail.querySelector(`[data-sum="${k}"]`); if (e) e.textContent = sm[k]; });
       const es = $('#qEst'); if (es) es.innerHTML = estHtml();
     }
-    const bar = $('#qTotal'); if (bar) bar.innerHTML = barHtml(R);
+    const bar = $('#qTotal'), costMode = $('#quote').dataset.qm === 'cost'; if (bar) { bar.innerHTML = costMode ? barCostHtml(R) : barHtml(R); bar.classList.toggle('int', costMode); }
     const st = $('#qStatus'); if (st) { st.className = 'qchip' + (R.checks.length ? '' : ' ok'); st.textContent = R.checks.length ? `${R.checks.length} to check` : 'Ready'; }
     const no = $('#qNo'); if (no) no.textContent = (Q.no || 'Numbering…') + ' · Rev ' + num(Q.rev, 1);
     const ss = $('#qStat'); if (ss && ss.value !== Q.status) ss.value = Q.status;
@@ -579,6 +622,88 @@
     const e = previewRev && revEntry(Q, previewRev); b.hidden = !e;
     if (e) b.innerHTML = `<span>Previewing <b>Rev ${e.rev}</b> (${esc(STATUS[e.status] || e.status)}, ${esc(rvDate(e.at))}) as it was. Read only.</span><span class="qpb-b"><button type="button" class="btn quiet sm" data-restore-rev="${e.rev}">Restore this revision</button><button type="button" class="btn sm" data-back>Back to the current quotation</button></span>`;
   }
+  /* ---------- the costing view (internal): our costs, the markup, the profit; nothing here is ever printed or sent ---------- */
+  const pct1 = v => (Math.round(v * 10) / 10).toFixed(1) + '%';
+  function costSummary(R) {
+    const Q = R.Q, T = R.totals, s = sym(Q), stat = (l, v, cls) => `<div class="qc-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`;
+    return T.groups.map(g => `<section class="qc-g"><h3>${esc(g.label)}</h3>${g.n ? `<div class="qc-stats">${stat('Our cost', s + ' ' + money(g.cost))}${stat('Selling price, before tax', s + ' ' + money(g.total))}${stat('Profit', s + ' ' + money(g.profit), g.profit > 0.005 ? 'pos' : 'neg')}${stat('Margin on the price', pct1(g.marginPct))}${stat('Markup on the cost', pct1(g.markupPct))}</div>`
+        : `<div class="qc-stats">${stat('Selling price, before tax', s + ' ' + money(g.total))}</div><p class="qnote">No item here has a cost yet. Type a cost on an item below to see the profit.</p>`}
+      ${g.n && g.un ? `<p class="qnote">${g.un} item${g.un > 1 ? 's have' : ' has'} no cost entered${g.unSell ? ` (${s} ${money(g.unSell)} of the price)` : ''} and ${g.un > 1 ? 'are' : 'is'} left out of the profit: ${esc(g.unNames.join(', '))}.</p>` : ''}</section>`).join('')
+      + (T.rent ? rentCheck(R) : '');
+  }
+  function rentCheck(R) {   // the rent against what the AMRs cost to buy (the selector price)
+    const Q = R.Q, M = (D0 && D0.model) || {}, qty = Math.max(1, (D0 && D0.qty) || 1), mo = R.totals.month.net, cost = num(M.unitPrice) * qty, s = sym(Q);
+    if (!(mo > 0) || !(cost > 0)) return '';
+    const years = num(Q.termYears, 5), total = mo * 12 * years;
+    return `<section class="qc-g"><h3>Rental check</h3><p class="qnote">${qty} AMR${qty > 1 ? 's' : ''} cost ${s} ${money(cost)} to buy (the selector price). At ${s} ${money(mo)} a month, before tax, they pay back in <b>${(cost / mo).toFixed(1)} months</b>. Over the ${years}-year contract the rent comes to ${s} ${money(total)}, which is ${(total / cost).toFixed(1)} times the cost of the AMRs.</p></section>`;
+  }
+  function costRow(l, rent) {
+    const ci = (k, v, ph, lab, dis) => `<input class="cell num" inputmode="decimal" autocomplete="off" data-rk="${k}" value="${esc(v)}" placeholder="${ph}" aria-label="${lab}"${dis ? ' disabled' : ''}>`, s = sym(R0.Q);
+    return `<div class="qc-row${l.on ? '' : ' off'}" data-row="${esc(l.id)}">
+      <label class="sw sm" title="Include this item in the quotation"><input type="checkbox" data-rk="on" ${l.on ? 'checked' : ''} aria-label="Include ${esc(l.name)}"><i></i></label>
+      <div class="qc-name"><b>${esc(l.name)}</b><small>${esc(l.sub || '')}${l.optional ? ' <em class="q-opt">Optional</em>' : ''}${rent && l.monthly ? ' <em class="q-opt">Monthly</em>' : ''}</small></div>
+      <label class="qc-f" data-l="Qty">${ci('qty', fmtQty(l.qty), '0', 'Quantity')}</label>
+      <label class="qc-f" data-l="Our unit cost">${ci('cost', l.cost && l.base ? money(l.base) : '', 'add cost', 'Our unit cost')}</label>
+      <label class="qc-f" data-l="Markup %">${ci('pct', l.cost && l.pct ? +l.pct.toFixed(2) : '', l.cost ? '0' : '', 'Markup percent', !l.cost)}</label>
+      <label class="qc-f" data-l="Unit price">${ci('price', l.unit > 0 ? money(l.unit) : '', '0.00', 'Unit price')}</label>
+      <label class="qc-f" data-l="Disc. %">${ci('disc', l.disc > 0 ? +l.disc.toFixed(2) : '', '0', 'Discount percent')}</label>
+      <div class="qc-t" data-l="Price"><b data-ctot>${l.on && l.unit > 0 ? money(l.sellX != null ? l.sellX : l.net) : '–'}</b></div>
+      <div class="qc-p" data-l="Profit"><b data-cprofit>${l.profit == null ? '–' : money(l.profit)}</b><small data-cmargin>${l.profit == null ? (l.on ? 'no cost yet' : '') : pct1(l.marginPct) + ' margin'}</small></div></div>`;
+  }
+  let R0 = null;
+  function costHtml(R) {
+    R0 = R; const Q = R.Q, rent = R.totals.rent, s = sym(Q), g0 = R.totals.groups[0];
+    const tool = (id, label, inner, btn, key) => `<div class="qc-tl"><label class="qf"><span>${label}</span>${inner}</label><button type="button" class="btn sm" data-ct="${key}">${btn}</button></div>`;
+    const pctBox = (v, ph) => `<div class="inp"><input inputmode="decimal" data-ci="${ph}" value="${v}" placeholder="0"><i class="r">%</i></div>`;
+    const steps = [0, 10, 50, 100, 500, 1000];
+    return `<div class="qc-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span><b>Costing: internal.</b> Only you see this page. Costs, markup and profit are never printed and never go in the PDF, which is the only thing the client sees.</span></div>
+      <div class="qc-side"><div id="qcSum">${costSummary(R)}</div>
+        <section class="qc-tools"><h3>Set the pricing</h3>
+          ${tool('mk', 'Markup on the cost, for every item that has a cost', pctBox(num(Q.markup) || '', 'markup'), 'Apply', 'markup')}
+          ${tool('mg', 'Or the margin you want on the price', pctBox(g0 && g0.n ? +g0.marginPct.toFixed(1) : '', 'margin'), 'Apply', 'margin')}
+          ${tool('tt', `Or the total you want, before tax (${esc(s)})`, `<div class="inp"><i>${esc(s)}</i><input inputmode="decimal" data-ci="total" value="${g0 ? money(g0.total) : ''}" placeholder="0.00"></div>`, 'Work out the markup', 'total')}
+          ${tool('rd', 'Round the unit prices up to', `<select data-ci="round">${steps.map(v => `<option value="${v}">${v ? s + ' ' + v : 'no rounding'}</option>`).join('')}</select>`, 'Round up', 'round')}
+          <p class="qc-msg" id="qcMsg" role="status"></p><p class="qnote">The markup is added to the cost of each item that has one. Items with no cost keep the price you typed. Everything also works on the page itself, and Undo takes any of it back.</p></section></div>
+      <div class="qc-table"><div class="qc-head"><span></span><span>Item</span><span>Qty</span><span>Our unit cost</span><span>Markup</span><span>Unit price</span><span>Disc.</span><span>Price</span><span>Profit</span></div>${R.lines.map(l => costRow(l, rent)).join('')}
+        <button type="button" class="btn quiet sm qc-addhint" data-qm-go="edit">Add or change items on the quotation page</button></div>`;
+  }
+  function paintCost(R) {
+    const c = $('#qCost'); if (!c) return; R0 = R;
+    const sm = $('#qcSum'); if (sm) sm.innerHTML = costSummary(R);
+    R.lines.forEach(l => {
+      const row = c.querySelector(`[data-row="${CSS.escape(l.id)}"]`); if (!row) return;
+      row.classList.toggle('off', !l.on);
+      const set = (k, v) => { const i = row.querySelector(`[data-rk="${k}"]`); if (i && i !== document.activeElement) i.value = v; };
+      set('price', l.unit > 0 ? money(l.unit) : ''); set('cost', l.cost && l.base ? money(l.base) : ''); set('pct', l.cost && l.pct ? +l.pct.toFixed(2) : ''); set('disc', l.disc > 0 ? +l.disc.toFixed(2) : ''); set('qty', fmtQty(l.qty));
+      const mk = row.querySelector('[data-rk="pct"]'); if (mk) { mk.disabled = !l.cost; mk.placeholder = l.cost ? '0' : ''; }
+      const t = row.querySelector('[data-ctot]'); if (t) t.textContent = l.on && l.unit > 0 ? money(l.sellX != null ? l.sellX : l.net) : '–';
+      const p = row.querySelector('[data-cprofit]'); if (p) p.textContent = l.profit == null ? '–' : money(l.profit);
+      const m = row.querySelector('[data-cmargin]'); if (m) m.textContent = l.profit == null ? (l.on ? 'no cost yet' : '') : pct1(l.marginPct) + ' margin';
+    });
+  }
+  function barCostHtml(R) {
+    const T = R.totals, s = sym(R.Q), g = T.groups[0], st = (l, v, cls) => `<div class="qb-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`;
+    const mo = T.rent ? T.groups[1] : null;
+    return g.n ? st('Our cost', s + ' ' + money(g.cost)) + st('Selling price', s + ' ' + money(g.total)) + (mo && mo.n ? st('Monthly profit', s + ' ' + money(mo.profit)) : '') + st('Margin', pct1(g.marginPct)) + st('Profit', s + ' ' + money(g.profit), 'hi')
+      : st('Selling price', s + ' ' + money(g.total)) + st('Our cost', 'not entered yet', 'hi');
+  }
+  function onCostClick(e) {
+    const go = e.target.closest('[data-qm-go]'); if (go) { setMode(go.dataset.qmGo); return; }
+    const b = e.target.closest('[data-ct]'); if (!b) return;
+    const k = b.dataset.ct, val = id => { const el = $(`#qCost [data-ci="${id}"]`); return el ? (el.tagName === 'SELECT' ? +el.value : parseNum(el.value)) : null; };
+    const s = sym(ensure(S0, D0)); let said = '';
+    const fail = t => { const m = $('#qcMsg'); if (m) { m.textContent = t; m.className = 'qc-msg bad'; } };
+    const after = () => { const g = compute(S0, D0).totals.groups[0]; return ` The total before tax is now ${s} ${money(g.total)}, the profit ${s} ${money(g.profit)} (${pct1(g.marginPct)} margin).`; };
+    if (!costedRows(S0, D0).some(r => r.cost)) return fail('No item has a cost yet: type a cost on an item first.');
+    if (k === 'markup') { const x = val('markup'); if (x == null || Number.isNaN(x) || x < 0) return fail('Type a markup, for example 30.'); mutate('ct', () => { const n = applyMarkup(S0, D0, x); said = `Markup of ${x}% applied to ${n} item${n === 1 ? '' : 's'}.`; }, () => say(said + after())); }
+    else if (k === 'margin') { const x = val('margin'); if (x == null || Number.isNaN(x) || x <= 0 || x >= 95) return fail('Type a margin between 1 and 94, for example 25.'); mutate('ct', () => { const mk = Math.round(marginToMarkup(x) * 100) / 100; applyMarkup(S0, D0, mk); said = `A margin of ${x}% needs a markup of ${mk}%, now applied.`; }, () => say(said + after())); }
+    else if (k === 'total') {
+      const x = val('total'), r = solveTarget(S0, D0, x == null || Number.isNaN(x) ? 0 : x); if (!r.ok) return fail(r.why);
+      mutate('ct', () => { applyMarkup(S0, D0, r.pct); said = `A markup of ${r.pct}% brings it to about ${s} ${money(x)}.`; }, () => say(said + after()));
+    } else if (k === 'round') { const x = val('round'); if (!(x > 0)) return fail('Choose what to round up to.'); mutate('ct', () => { const n = roundUp(S0, D0, x); said = `${n} unit price${n === 1 ? '' : 's'} rounded up to the next ${s} ${x}.`; }, () => say(said + after())); }
+  }
+  function say(t) { const m = $('#qcMsg'); if (m) { m.textContent = t; m.className = 'qc-msg'; } }
+  function setMode(m) { previewRev = null; const qz = $('#quote'); qz.dataset.qm = m; $$('#qMode .tab').forEach(t => t.classList.toggle('active', t.dataset.qm === m)); refresh(false); fit(); setTimeout(fit, 60); }
   function revsHtml(R) {
     const Q = R.Q, hist = (Q.history || []).slice().sort((a, b) => b.rev - a.rev), cs = c => CURS[c] || c || 'RM';
     const cur = `<div class="rv cur"><div class="rv-h"><b>Rev ${num(Q.rev, 1)}</b><span class="rvs ${esc(Q.status)}">${STATUS[Q.status] || 'Draft'}</span><small>current</small></div>${Q.revNote ? `<p>${esc(Q.revNote)}</p>` : ''}</div>`;
@@ -649,7 +774,7 @@
         if (k === 'qty') { r.qty = Math.max(0, v || 0); r.ed.qty = 1; }
         else if (k === 'price') setPrice(r, v || 0);
         else if (k === 'disc') { r.disc = Math.min(100, Math.max(0, v || 0)); r.ed.disc = 1; if ((v || 0) > 100) el.classList.add('bad'); }
-        else if (k === 'cost') { r.base = Math.max(0, v || 0); r.ed.price = 1; }
+        else if (k === 'cost') setCost(r, Math.max(0, v || 0));
         else if (k === 'pct') { r.pct = v || 0; r.ed.price = 1; }
       } else { snap('r:' + r.id + k); const key = k.replace('row.', ''); r[key] = textOf(el); r.ed[key] = 1; }
       persist(); refresh(false); return;
@@ -762,6 +887,7 @@
     const qz = $('#quote'), paper = $('#qPaper'), rail = $('#qRail');
     paper.addEventListener('input', onInput); paper.addEventListener('change', onChange); paper.addEventListener('click', onPaperClick); paper.addEventListener('keydown', onKey); paper.addEventListener('paste', onPaste); paper.addEventListener('focusout', onBlur);
     rail.addEventListener('click', onRailClick); rail.addEventListener('input', onRailInput); rail.addEventListener('change', onRailInput);
+    const cost = $('#qCost'); if (cost) { cost.addEventListener('input', onInput); cost.addEventListener('change', onChange); cost.addEventListener('focusout', onBlur); cost.addEventListener('click', onCostClick); cost.addEventListener('keydown', onKey); }
     rail.addEventListener('toggle', e => { const d = e.target.closest && e.target.closest('details.qsec'); if (d) openSecs[d.dataset.sec] = d.open; }, true);
     document.addEventListener('click', e => { $$('#qPaper details.rmenu[open], #qPaper details.addmenu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
@@ -790,5 +916,5 @@
     if (Date.now() - reg.at > 5000) loadList();
     refresh(true);
   }
-  root.WFCQuote = { update, printHtml, fileName, beforeGenerate, afterGenerate, freeze, startRevision, lockedChanged, snapshot, applySnapshot, revDoc, claimNo, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
+  root.WFCQuote = { setCost, applyMarkup, marginToMarkup, solveTarget, applyTarget, roundUp, update, printHtml, fileName, beforeGenerate, afterGenerate, freeze, startRevision, lockedChanged, snapshot, applySnapshot, revDoc, claimNo, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
 })(window);
