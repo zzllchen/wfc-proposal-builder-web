@@ -13,10 +13,12 @@
   const money = (v, d) => (+v || 0).toLocaleString('en-US', { minimumFractionDigits: d == null ? 2 : d, maximumFractionDigits: d == null ? 2 : d });
 
   const EXCL = {
-    both: ['Major layout modifications or route redesign are not included in this quotation.', 'AMR route changing after commissioning is charged separately.',
-      'Items marked Optional, civil works, and power and network cabling to the AMR area are not included unless listed above.'],
     rent: ['Early termination: cancellation within the contract period incurs a penalty equal to the remaining months of full rental charges.']
   };
+  // the standard exclusions (the route-change charge is WFC's usual one, from the price list)
+  const exclDefault = rent => { const rc = num(((DB.quote || {}).routeChange)); return ['Major layout modifications or route redesign are not included in this quotation.',
+    rc > 0 ? `AMR route changing after commissioning is charged separately at RM ${money(rc)} per AMR.` : 'AMR route changing after commissioning is charged separately.',
+    'Items marked Optional, civil works, and power and network cabling to the AMR area are not included unless listed above.'].concat(rent ? EXCL.rent : []); };
   const SERVICE = [
     ['Mechanical check', 'Forks and lifting mechanism, tyre wear, brake system, lubrication'],
     ['Sensors and safety', 'LiDAR and laser calibration and cleaning, bumper sensor, emergency stop test, warning lights and indicators, alarm sounds'],
@@ -27,14 +29,16 @@
   /* ---------- the settings ---------- */
   function ensure(S) {
     const Q = S.quote || (S.quote = {});
-    const d = { type: 'rent', termYears: 5, no: '', date: '', validityDays: 30, taxPct: 0, delivery: 'DDP to your factory', period: '', payment: null, warranty: '1-year warranty on manufacturing defects',
+    const d = { type: 'rent', termYears: 5, no: '', date: '', validityDays: 30, taxPct: num(DB.defaults && DB.defaults.taxPct, 0), markup: 0, delivery: 'DDP to your factory', period: '', payment: null, warranty: '1-year warranty on manufacturing defects',
       bank: 'All bank charges (remitter and beneficiary) are for your account and must not be deducted from our invoice.', exclusions: null, notes: '', service: true, perYear: 4, optB: { on: false, reduction: 0, months: 12 }, lines: {}, internal: false };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
+    if (!Q.stamp) { const n = new Date(); Q.stamp = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0'); }
     if (!Q.optB) Q.optB = d.optB; if (!Q.lines) Q.lines = {};
     return Q;
   }
   const stampDate = S => (S.quote && S.quote.date) || (S.client && S.client.date) || new Date().toISOString().slice(0, 10);
-  const quoteNo = S => (S.quote && S.quote.no) || ((String((S.client && S.client.name) || 'WFC').trim().split(/\s+/)[0] || 'WFC').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 4) + '-' + stampDate(S).replace(/-/g, ''));
+  // CLIENT-DDMMYYYY-HHMM, the way the existing quotations are numbered (the time is when this quotation was first made)
+  const quoteNo = S => { if (S.quote && S.quote.no) return S.quote.no; const d = stampDate(S).split('-'), q = (S.quote && S.quote.stamp) || '0000'; return ((String((S.client && S.client.name) || 'WFC').trim().split(/\s+/)[0] || 'WFC').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5) || 'WFC') + '-' + d[2] + d[1] + d[0] + '-' + q; };
   const longDate = iso => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || ''); if (!m) return iso || ''; return new Date(+m[1], +m[2] - 1, +m[3]).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' }); };
 
   /* ---------- the lines of the quotation, from the proposal ---------- */
@@ -45,7 +49,8 @@
     const L = [];
     const amr = [M.payloadKg ? `Load capacity: up to ${M.payloadKg >= 1000 ? (M.payloadKg / 1000) + ' tonne' : M.payloadKg + ' kg'}` : '', M.nav ? `Navigation: ${M.nav}` : '', M.battery ? `Battery: ${M.battery}` : '', 'Auto and manual mode (switchable)'].filter(Boolean);
     if (rent) {
-      L.push({ id: 'rent', label: 'AMR rental contract', sub: M.name, qty, uom: 'unit / month', base: num((K.rent || {})[M.id]), taxable: true, monthly: true,
+      const known = num((K.rent || {})[M.id]), ref = DB.models.find(m => m.id === 'reeman-pj15'), ratio = ref && K.rent && K.rent['reeman-pj15'] ? K.rent['reeman-pj15'] / ref.unitPrice : 0, guess = !known && ratio && M.unitPrice ? Math.round(M.unitPrice * ratio / 100) * 100 : 0;
+      L.push({ id: 'rent', label: 'AMR rental contract', sub: M.name, qty, uom: 'unit / month', base: known || guess, est: !known && guess > 0, taxable: true, monthly: true,
         bullets: amr.concat([Q.warranty, `Based on a ${Q.termYears}-year contract`, 'Rental contract includes AMR maintenance and service']) });
       L.push({ id: 'install', label: `Installation and commissioning of ${qty} AMR${qty > 1 ? 's' : ''}`, qty: 1, uom: 'LOT', base: num(st.install), taxable: false,
         bullets: ['Complete installation and commissioning of the AMR unit' + (qty > 1 ? 's' : ''), 'Supply and installation of charging stations, push buttons and related accessories', 'Navigation setup, route configuration and system integration', 'Functional testing and operator training'] });
@@ -76,32 +81,39 @@
       bullets: ['Supply of a dedicated server for the Robot Control System', 'Deployment and configuration of the RCS software', 'Supply of a monitoring station including monitor, keyboard and mouse'] });
     return L;
   }
-  function lines(S, D) {
-    const Q = ensure(S);
+  function lines(S, D, Qx) {
+    const Q = Qx || ensure(S);
     return defs(S, D, Q).map(d => {
-      const o = Q.lines[Q.type + ':' + d.id] || {}, l = { id: d.id, label: d.label, sub: d.sub, uom: d.uom, bullets: d.bullets, optional: !!d.optional, monthly: !!d.monthly, taxable: d.taxable,
-        on: o.on !== undefined ? !!o.on : !d.optional, qty: o.qty !== undefined ? num(o.qty, 1) : d.qty, base: o.base !== undefined ? num(o.base) : d.base, pct: num(o.pct) };
+      const o = Q.lines[Q.type + ':' + d.id] || {}, l = { id: d.id, label: d.label, sub: d.sub, uom: d.uom, bullets: d.bullets, optional: !!d.optional, monthly: !!d.monthly, taxable: d.taxable, est: !!d.est && o.base === undefined,
+        on: o.on !== undefined ? !!o.on : !d.optional, qty: o.qty !== undefined ? num(o.qty, 1) : d.qty, base: o.base !== undefined ? num(o.base) : d.base, pct: o.pct !== undefined ? num(o.pct) : num(Q.markup) };
       const c = C.lineCalc(l); l.unit = c.unit; l.total = c.total; l.markupPct = l.pct; return l;
     });
   }
 
   /* ---------- the numbers ---------- */
-  function compute(S, D) {
-    const Q = ensure(S), L = lines(S, D), inc = L.filter(l => l.on), rent = Q.type === 'rent', tax = num(Q.taxPct), T = { rent };
+  function compute(S, D, type) {
+    const Q0 = ensure(S), Q = type && type !== Q0.type ? Object.assign({}, Q0, { type }) : Q0, L = lines(S, D, Q), inc = L.filter(l => l.on), rent = Q.type === 'rent', tax = num(Q.taxPct), T = { rent };
     if (rent) {
       const su = C.sumLines(inc.filter(l => !l.monthly), tax), mo = C.sumLines(inc.filter(l => l.monthly), tax);
       T.setup = su; T.month = mo; T.upfront = su.grand + mo.grand; T.deposit = su.grand / 2 + mo.grand; T.balance = su.grand / 2;
       const red = Math.min(Math.max(num(Q.optB.reduction), 0), su.grand), months = Math.max(num(Q.optB.months, 12), 1);
       T.optB = Q.optB.on && red > 0 ? { setup: su.grand - red, y1: mo.grand + red / months, monthly: mo.grand, months, reduction: red, upfront: su.grand - red + mo.grand + red / months } : null;
     } else {
-      T.sum = C.sumLines(inc, tax); T.deposit = T.sum.grand / 2; T.balance = T.sum.grand / 2;
+      T.sum = C.sumLines(inc, tax); T.pay = [T.sum.grand * 0.4, T.sum.grand * 0.4, T.sum.grand * 0.2];   // WFC's usual purchase terms: 40% on PO, 40% on stock arrival, 20% on completion
     }
     const checks = [];
     const noPrice = inc.filter(l => !(l.unit > 0)); if (noPrice.length) checks.push(`${noPrice.length} price${noPrice.length > 1 ? 's are' : ' is'} missing: ${noPrice.map(l => l.label).join(', ')}`);
+    if (inc.some(l => l.est)) checks.push('The monthly rent is estimated from the 1.5T rental rate: confirm it');
     if (!tax) checks.push('No tax is added: confirm whether SST applies');
     if (!String(Q.period || '').trim()) checks.push('The delivery period is blank');
     if (!(S.client && S.client.name)) checks.push('The client name is blank');
     return { lines: L, totals: T, checks, Q };
+  }
+  // the estimated quotation for the proposal, both ways: what it costs to buy, and to rent (setup + monthly)
+  function estimate(S, D) {
+    const M = (D && D.model) || {}, qty = Math.max(1, (D && D.qty) || 1), ps = (S.layoutPlan && S.layoutPlan.points) || [], stations = ps.filter(p => p.kind === 'pick').length, doors = ps.filter(p => p.kind === 'door').length;
+    const basis = [`${qty} x ${M.name || 'AMR'}`, stations ? `${stations} station${stations > 1 ? 's' : ''}` : '', doors ? `${doors} door${doors > 1 ? 's' : ''}` : '', S.fleet && S.fleet.strategy === 'swap' ? 'battery swap' : 'automatic charging'].filter(Boolean).join(' · ');
+    return { buy: compute(S, D, 'buy').totals, rent: compute(S, D, 'rent').totals, basis, qty };
   }
 
   /* ---------- the A4 document ---------- */
@@ -123,14 +135,14 @@
     }
     const payment = Q.payment != null && String(Q.payment).trim() ? esc(Q.payment) : rent
       ? `50% of the setup and the 1st month rental upon PO confirmation: RM ${RM(T.deposit)}. 50% of the setup upon installation and commissioning completion: RM ${RM(T.balance)}.`
-      : `50% upon PO issuance: RM ${RM(T.deposit)}. 50% upon project completion: RM ${RM(T.balance)}.`;
-    const exclusions = (Q.exclusions != null ? String(Q.exclusions).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : EXCL.both.concat(rent ? EXCL.rent : []));
+      : `40% upon receipt of PO: RM ${RM(T.pay[0])}. 40% upon stock arrival: RM ${RM(T.pay[1])}. 20% upon project completion: RM ${RM(T.pay[2])}.`;
+    const exclusions = (Q.exclusions != null ? String(Q.exclusions).split(/\r?\n/).map(s => s.trim()).filter(Boolean) : exclDefault(rent));
     const terms = [['Delivery terms', Q.delivery], ['Delivery period', String(Q.period || '').trim() || 'To be confirmed'], ['Offer validity', `${num(Q.validityDays, 30)} days from the quotation date`],
       ['Payment terms', payment], ['Warranty', Q.warranty], ['Bank charges', Q.bank]].filter(t => t[1]);
     const service = rent && Q.service ? `<section class="q-block q-service"><h3>AMR maintenance and service</h3><p>Service frequency: ${num(Q.perYear, 4)} times a year${num(Q.perYear, 4) === 4 ? ' (every quarter)' : ''}. Total service: ${qty} AMR${qty > 1 ? 's' : ''}.</p>
       <dl>${SERVICE.map(s => `<dt>${s[0]}</dt><dd>${esc(s[1])}</dd>`).join('')}</dl></section>` : '';
     return `<div class="qdoc">
-      <header class="q-head"><div class="q-brand"><img src="${root.WFC_IMG && root.WFC_IMG.logo || ''}" alt=""><div><b>${esc(co.name)}</b><span>${esc(co.address)}</span><span>${esc(co.web)}</span></div></div>
+      <header class="q-head"><div class="q-brand"><img src="${root.WFC_IMG && root.WFC_IMG.logo || ''}" alt=""><div><b>${esc(co.legal || co.name)}</b><span>${co.regNo ? 'Company No. ' + esc(co.regNo) : ''}</span><span>${esc(co.address)}</span><span>${esc(co.web)}</span></div></div>
         <div class="q-title"><h1>QUOTATION</h1><table class="q-meta"><tr><td>Quotation no.</td><td>${esc(quoteNo(S))}</td></tr><tr><td>Date</td><td>${esc(longDate(dateIso))}</td></tr>
         <tr><td>Your contact</td><td>${esc(k.name || '')}</td></tr><tr><td>Phone</td><td>${esc(k.phone || '')}</td></tr><tr><td>Email</td><td>${esc(k.email || '')}</td></tr></table></div></header>
       <section class="q-to"><div><small>Quoted to</small><b>${esc(c.name || 'Client name')}</b>${c.address ? `<p>${esc(c.address)}</p>` : ''}${c.attn ? `<p>Attn: ${esc(c.attn)}</p>` : ''}</div>
@@ -142,7 +154,7 @@
       ${exclusions.length ? `<section class="q-block"><h3>Exclusions</h3><ol>${exclusions.map(e => `<li>${esc(e)}</li>`).join('')}</ol></section>` : ''}
       ${service}
       ${Q.notes ? `<section class="q-block"><h3>Notes</h3><p>${esc(Q.notes).replace(/\n/g, '<br>')}</p></section>` : ''}
-      <section class="q-sign"><p>Best regards,<br><b>${esc(co.name)}</b></p><div class="q-line"></div><p>${esc(k.name || '')}<br><small>Authorised signature</small></p></section>
+      <section class="q-sign"><p>Best regards,<br><b>${esc(co.legal || co.name)}</b></p><div class="q-line"></div><p>${esc(k.name || '')}<br><small>Authorised signature</small></p></section>
     </div>`;
   }
   const printHtml = (S, D) => `<div class="qprint">${docHtml(S, D)}</div>`;
@@ -177,6 +189,11 @@
         <label class="ql-f"><span>Markup</span><div class="inp"><input type="number" step="any" data-lf="pct" value="${l.pct ? +l.pct.toFixed(2) : ''}" placeholder="0"><i class="r">%</i></div></label></div>` : ''}
     </div>`;
   }
+  function estHtml() {
+    const E = estimate(S0, D0), Q = ensure(S0), tx = num(Q.taxPct), row = (k, a, b) => `<button type="button" class="qe-row${Q.type === k ? ' on' : ''}" data-est="${k}"><span>${a}</span><b>${b}</b></button>`;
+    return `<small>Estimated quotation <em>from your proposal</em></small>${row('buy', 'To buy', 'RM ' + money(E.buy.sum.grand))}${row('rent', 'To rent', 'RM ' + money(E.rent.setup.grand) + ' setup + RM ' + money(E.rent.month.grand) + ' a month')}
+      <p>${esc(E.basis)}. Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.</p>`;
+  }
   function barHtml(R) {
     const T = R.totals, st = (l, v, cls) => `<div class="qb-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`, tx = num(R.Q.taxPct);
     return T.rent ? st('One-time setup', 'RM ' + money(T.setup.grand)) + st('Monthly rental', 'RM ' + money(T.month.grand)) + st('Initial payment', 'RM ' + money(T.upfront), 'hi')
@@ -189,7 +206,7 @@
   }
   function summaries(R) {
     const Q = R.Q, rent = Q.type === 'rent', inc = R.lines.filter(l => l.on).length;
-    return { offer: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${quoteNo(S0)}`, items: `${inc} of ${R.lines.length} items`, tax: num(Q.taxPct) ? `Tax ${num(Q.taxPct)}%` : 'No tax added',
+    return { offer: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${quoteNo(S0)}`, items: `${inc} of ${R.lines.length} items`, tax: (num(Q.taxPct) ? `Tax ${num(Q.taxPct)}%` : 'No tax added') + (num(Q.markup) ? ` · markup ${num(Q.markup)}%` : ''),
       terms: `${num(Q.validityDays, 30)} days valid` + (String(Q.period || '').trim() ? ' · ' + Q.period : ''), excl: 'What is not included', svc: Q.service ? `${num(Q.perYear, 4)} visits a year` + (Q.optB.on ? ' · Option B' : '') : (Q.optB.on ? 'Option B' : 'Off') };
   }
   const sec = (id, title, sum, body) => `<details class="qsec" data-sec="${id}"${openSecs[id] ? ' open' : ''}><summary><span class="qs-ico">${svg(ICON[id])}</span><span class="qs-t">${title}</span><span class="qs-s" data-sum="${id}">${esc(sum)}</span>
@@ -202,18 +219,20 @@
     const items = `<div class="ql-head"><span></span><span>Item</span><span>Qty</span><span>Unit price</span><span>Total</span></div><div class="qlines" id="qLines">${R.lines.map(l => lineRow(l, Q.internal)).join('')}</div>
       <label class="qtog"><span class="sw"><input type="checkbox" data-qf="internal" ${Q.internal ? 'checked' : ''}><i></i></span><span>Show cost and markup <small>only you see these; they are never printed</small></span></label>`;
     const tax = fld('Tax (SST)', `<div class="inp"><input type="number" min="0" step="any" data-qf="taxPct" value="${num(Q.taxPct)}"><i class="r">%</i></div>`, 'qf-s')
-      + '<p class="qnote">Applied to every item except installation. Leave it at 0 if tax is not charged.</p>';
+      + '<p class="qnote">The rate used in the selector tool, applied to every item except installation. Set 0 if tax is not charged.</p>'
+      + fld('Markup on every item', `<div class="inp"><input type="number" step="any" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
+      + '<p class="qnote">The prices start at the prices in the selector tool. Add a markup here for the price you quote (only you see it; an item you price by hand keeps its own).</p>';
     const terms = fld('Delivery terms', `<input data-qf="delivery" value="${esc(Q.delivery)}">`) + fld('Delivery period', `<input data-qf="period" value="${esc(Q.period)}" placeholder="e.g. 12 weeks from PO">`)
-      + fld('Payment terms', `<textarea rows="3" data-qf="payment" placeholder="Filled in from the totals (50% / 50%). Type here to change it.">${esc(Q.payment || '')}</textarea>`)
+      + fld('Payment terms', `<textarea rows="3" data-qf="payment" placeholder="Filled in from the totals (rent: 50% / 50%; buy: 40% / 40% / 20%). Type here to change it.">${esc(Q.payment || '')}</textarea>`)
       + fld('Warranty', `<input data-qf="warranty" value="${esc(Q.warranty)}">`) + fld('Bank charges', `<textarea rows="2" data-qf="bank">${esc(Q.bank)}</textarea>`);
-    const excl = fld('Exclusions (one per line)', `<textarea rows="5" data-qf="exclusions">${esc(Q.exclusions != null ? Q.exclusions : EXCL.both.concat(rent ? EXCL.rent : []).join('\n'))}</textarea>`)
+    const excl = fld('Exclusions (one per line)', `<textarea rows="5" data-qf="exclusions">${esc(Q.exclusions != null ? Q.exclusions : exclDefault(rent).join('\n'))}</textarea>`)
       + fld('Notes for the client', `<textarea rows="2" data-qf="notes" placeholder="Anything else you want on the quotation">${esc(Q.notes)}</textarea>`);
     const svc = rent ? `<label class="qtog"><span class="sw"><input type="checkbox" data-qf="service" ${Q.service ? 'checked' : ''}><i></i></span><span>Add the maintenance and service page</span></label>
       ${Q.service ? fld('Service visits a year', `<input type="number" min="1" data-qf="perYear" value="${num(Q.perYear, 4)}">`, 'qf-s') : ''}
       <label class="qtog"><span class="sw"><input type="checkbox" data-qf="optB.on" ${Q.optB.on ? 'checked' : ''}><i></i></span><span>Offer a lower setup fee (option B) <small>the saving is paid back through a higher rental for a while</small></span></label>
       ${Q.optB.on ? `<div class="qgrid">${fld('Reduce setup by', rm(`<input type="number" min="0" step="any" data-qf="optB.reduction" value="${num(Q.optB.reduction) || ''}">`))}${fld('Paid back over', `<div class="inp"><input type="number" min="1" data-qf="optB.months" value="${num(Q.optB.months, 12)}"><i class="r">months</i></div>`)}</div>` : ''}`
       : '<p class="qnote">The maintenance and service page and option B are for rental quotations.</p>';
-    return `<div id="qCheck">${checkHtml(R)}</div>${sec('offer', 'Offer', sm.offer, offer)}${sec('items', 'Items and prices', sm.items, items)}${sec('tax', 'Tax', sm.tax, tax)}${sec('terms', 'Terms and payment', sm.terms, terms)}${sec('excl', 'Exclusions and notes', sm.excl, excl)}${sec('svc', rent ? 'Service and option B' : 'Service', sm.svc, svc)}
+    return `<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('offer', 'Offer', sm.offer, offer)}${sec('items', 'Items and prices', sm.items, items)}${sec('tax', 'Tax', sm.tax, tax)}${sec('terms', 'Terms and payment', sm.terms, terms)}${sec('excl', 'Exclusions and notes', sm.excl, excl)}${sec('svc', rent ? 'Service and option B' : 'Service', sm.svc, svc)}
       <p class="qhint">The proposal PDF never shows a price. <b>Download PDF</b> saves this quotation as its own PDF.</p>`;
   }
   function refresh(full) {
@@ -223,8 +242,10 @@
     else {
       const c = $('#qCheck'); if (c) { const open = c.querySelector('details') && c.querySelector('details').open; c.innerHTML = checkHtml(R); if (open) { const d = c.querySelector('details'); if (d) d.open = true; } }
       const sm = summaries(R); Object.keys(sm).forEach(k => { const e = ed.querySelector(`[data-sum="${k}"]`); if (e) e.textContent = sm[k]; });
-      R.lines.forEach(l => { const e = ed.querySelector(`.ql[data-id="${l.id}"] [data-tot]`); if (e) e.textContent = l.on && l.total > 0 ? money(l.total) : '–'; });
+      R.lines.forEach(l => { const row = ed.querySelector(`.ql[data-id="${l.id}"]`); if (!row) return; const e = row.querySelector('[data-tot]'); if (e) e.textContent = l.on && l.total > 0 ? money(l.total) : '–';
+        const pi = row.querySelector('[data-lf="price"]'); if (pi && pi !== document.activeElement) pi.value = l.unit ? +l.unit.toFixed(2) : ''; });   // a markup or tax change moves the prices too
     }
+    const es = $('#qEst'); if (es) es.innerHTML = estHtml();
     const bar = $('#qTotal'); if (bar) bar.innerHTML = barHtml(R);
     const st = $('#qStatus'); if (st) { st.className = 'qchip' + (R.checks.length ? '' : ' ok'); st.textContent = R.checks.length ? `${R.checks.length} to check` : 'Ready'; }
     sheet.innerHTML = docHtml(S0, D0); fit();
@@ -239,6 +260,7 @@
     if (bound) return; bound = true;
     const ed = $('#qEdit'), qz = $('#quote');
     ed.addEventListener('click', e => {
+      const es = e.target.closest('[data-est]'); if (es) { ensure(S0).type = es.dataset.est; ensure(S0).exclusions = null; persist(); refresh(true); return; }
       const b = e.target.closest('.seg[data-q] [data-v]'); if (!b) return; const Q = ensure(S0), key = b.closest('.seg').dataset.q;
       Q[key] = key === 'termYears' ? +b.dataset.v : b.dataset.v;
       if (key === 'type') Q.exclusions = null;   // the standard exclusions follow the type
@@ -279,5 +301,5 @@
     if (selfEdit) { selfEdit = false; refresh(false); return; }   // an edit made here: only the totals and the document move (the fields keep the cursor)
     refresh(true);
   }
-  root.WFCQuote = { update, printHtml, compute, ensure, docHtml };
+  root.WFCQuote = { update, printHtml, compute, estimate, ensure, docHtml };
 })(window);

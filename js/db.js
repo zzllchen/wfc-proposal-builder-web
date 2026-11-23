@@ -3,6 +3,7 @@
 window.WFCDB = {
   company: {
     name: 'WFC Systems', tagline: 'Where Flow Connects.', web: 'www.wfcsystems.com',
+    legal: 'WFC Systems Sdn. Bhd.', regNo: '1632508H',   // the registered company (the quotation header and signature use it; the proposal says WFC Systems)
     address: 'SK 1 Residensi, G11, Jalan PSK 4, Pusat Perdagangan Seri Kembangan, 43300 Seri Kembangan, Selangor'
   },
   // The people who can be named as the WFC contact on a proposal (picked from a dropdown; phone and email follow the name).
@@ -13,7 +14,7 @@ window.WFCDB = {
   defaults: { customisation: 3.75, delivery: 2.5, installation: 3.125, taxPct: 10 },
   /* quote:start */
   // the Quotation tab's starting prices (RM), from the real rental quotation; every one is editable in the tab
-  quote: { rent: { 'reeman-pj15': 1.125 }, setup: { install: 3.0, rcs: 4.5, door: 1.5, callbox: 1.0, wifi: 3.75, server: 5.0 } },
+  quote: { routeChange: 0.5, rent: { 'reeman-pj15': 1.125 }, setup: { install: 3.0, rcs: 4.5, door: 1.5, callbox: 1.0, wifi: 3.75, server: 5.0 } },
   /* quote:end */
   models: [
     { id: 'reeman-pj15', name: '1.5T Pallet Jack AMR', type: 'Pallet Jack AMR', supplier: 'Reeman', payloadKg: 1500, liftMm: 205, hole: 'Normal', shape: 'Open', aisleM: 2.2, turnM: 1.365, outdoor: false, floor: 'Cement, Epoxy', wifi: false, unitPrice: 9.925, rcsUnit: 7.05, rcsAtQty1: false, img: 'amr-pj15', nav: 'Laser SLAM', speed: '1.0 / 1.5 m/s (laden / empty)', battery: '48 V / 30 Ah', safety: '5 m LiDAR and safe-touch edge', accuracy: '±100 mm' },
