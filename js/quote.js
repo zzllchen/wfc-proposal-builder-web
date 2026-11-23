@@ -27,9 +27,12 @@
   ];
 
   /* ---------- the settings ---------- */
+  // the selector tool's AMR and RCS prices are WFC's cost, so a quotation needs a markup on them; the one you usually add is kept on this PC
+  const MKEY = 'wfc-quote-markup';
+  const defaultMarkup = () => { try { const v = parseFloat(localStorage.getItem(MKEY)); if (Number.isFinite(v)) return v; } catch (e) { /* no saved one */ } return num((DB.quote || {}).markup, 0); };   // the one you saved, else the standard 30% in js/db.js
   function ensure(S) {
     const Q = S.quote || (S.quote = {});
-    const d = { type: 'rent', termYears: 5, no: '', date: '', validityDays: 30, taxPct: num(DB.defaults && DB.defaults.taxPct, 0), markup: 0, delivery: 'DDP to your factory', period: '', payment: null, warranty: '1-year warranty on manufacturing defects',
+    const d = { type: 'rent', termYears: 5, no: '', date: '', validityDays: 30, taxPct: num(DB.defaults && DB.defaults.taxPct, 0), markup: defaultMarkup(), delivery: 'DDP to your factory', period: '', payment: null, warranty: '1-year warranty on manufacturing defects',
       bank: 'All bank charges (remitter and beneficiary) are for your account and must not be deducted from our invoice.', exclusions: null, notes: '', service: true, perYear: 4, optB: { on: false, reduction: 0, months: 12 }, lines: {}, internal: false };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
     if (!Q.stamp) { const n = new Date(); Q.stamp = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0'); }
@@ -59,8 +62,8 @@
     } else {
       const P = C.purchaseLines({ unitPrice: M.unitPrice, rcsUnit: M.rcsUnit, rcsAtQty1: M.rcsAtQty1 }, qty, DB.defaults);
       const pl = Object.fromEntries(P.map(l => [l.id, l]));
-      L.push({ id: 'hw', label: 'AMR hardware', sub: M.name, qty, uom: 'unit', base: pl.hw.base, taxable: true, bullets: amr.concat([Q.warranty]) });
-      L.push({ id: 'rcs', label: 'Robot Control System (RCS) and system', qty: 1, uom: 'LOT', base: pl.rcs.base, taxable: true,
+      L.push({ id: 'hw', label: 'AMR hardware', sub: M.name, qty, uom: 'unit', base: pl.hw.base, taxable: true, cost: true, bullets: amr.concat([Q.warranty]) });
+      L.push({ id: 'rcs', label: 'Robot Control System (RCS) and system', qty: 1, uom: 'LOT', base: pl.rcs.base, taxable: true, cost: true,
         bullets: ['Centralised software platform for AMR task scheduling, traffic control, route management, mission dispatching, monitoring and reporting', 'Perpetual licence including user management, map management and an operational dashboard'] });
       L.push({ id: 'custom', label: 'Customisation', qty: 1, uom: 'LOT', base: pl.custom.base, taxable: true, bullets: ['Setup of the AMR for the site and the pallet'] });
       L.push({ id: 'delivery', label: 'Delivery', qty: 1, uom: 'LOT', base: pl.delivery.base, taxable: true, bullets: [Q.delivery] });
@@ -84,8 +87,8 @@
   function lines(S, D, Qx) {
     const Q = Qx || ensure(S);
     return defs(S, D, Q).map(d => {
-      const o = Q.lines[Q.type + ':' + d.id] || {}, l = { id: d.id, label: d.label, sub: d.sub, uom: d.uom, bullets: d.bullets, optional: !!d.optional, monthly: !!d.monthly, taxable: d.taxable, est: !!d.est && o.base === undefined,
-        on: o.on !== undefined ? !!o.on : !d.optional, qty: o.qty !== undefined ? num(o.qty, 1) : d.qty, base: o.base !== undefined ? num(o.base) : d.base, pct: o.pct !== undefined ? num(o.pct) : num(Q.markup) };
+      const o = Q.lines[Q.type + ':' + d.id] || {}, l = { id: d.id, label: d.label, sub: d.sub, uom: d.uom, bullets: d.bullets, optional: !!d.optional, monthly: !!d.monthly, taxable: d.taxable, est: !!d.est && o.base === undefined, cost: !!d.cost,
+        on: o.on !== undefined ? !!o.on : !d.optional, qty: o.qty !== undefined ? num(o.qty, 1) : d.qty, base: o.base !== undefined ? num(o.base) : d.base, pct: o.pct !== undefined ? num(o.pct) : (d.cost ? num(Q.markup) : 0) };
       const c = C.lineCalc(l); l.unit = c.unit; l.total = c.total; l.markupPct = l.pct; return l;
     });
   }
@@ -101,7 +104,10 @@
     } else {
       T.sum = C.sumLines(inc, tax); T.pay = [T.sum.grand * 0.4, T.sum.grand * 0.4, T.sum.grand * 0.2];   // WFC's usual purchase terms: 40% on PO, 40% on stock arrival, 20% on completion
     }
+    const cl = inc.filter(l => l.cost);   // the supplier items: what they cost WFC, what they are sold for
+    T.hasCost = cl.length > 0; T.cost = cl.reduce((a, l) => a + l.base * l.qty, 0); T.sell = cl.reduce((a, l) => a + l.total, 0); T.marginPct = T.sell > 0 ? (T.sell - T.cost) / T.sell * 100 : 0;
     const checks = [];
+    if (T.hasCost && !(T.sell > T.cost + 0.005)) checks.push('No markup: the AMR and RCS are at the selector tool cost price, so there is no margin');
     const noPrice = inc.filter(l => !(l.unit > 0)); if (noPrice.length) checks.push(`${noPrice.length} price${noPrice.length > 1 ? 's are' : ' is'} missing: ${noPrice.map(l => l.label).join(', ')}`);
     if (inc.some(l => l.est)) checks.push('The monthly rent is estimated from the 1.5T rental rate: confirm it');
     if (!tax) checks.push('No tax is added: confirm whether SST applies');
@@ -192,7 +198,7 @@
   function estHtml() {
     const E = estimate(S0, D0), Q = ensure(S0), tx = num(Q.taxPct), row = (k, a, b) => `<button type="button" class="qe-row${Q.type === k ? ' on' : ''}" data-est="${k}"><span>${a}</span><b>${b}</b></button>`;
     return `<small>Estimated quotation <em>from your proposal</em></small>${row('buy', 'To buy', 'RM ' + money(E.buy.sum.grand))}${row('rent', 'To rent', 'RM ' + money(E.rent.setup.grand) + ' setup + RM ' + money(E.rent.month.grand) + ' a month')}
-      <p>${esc(E.basis)}. Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.</p>`;
+      <p>${esc(E.basis)}. Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.</p>${E.buy.hasCost ? `<p class="qe-cost${E.buy.sell > E.buy.cost + 0.005 ? '' : ' warn'}">${E.buy.sell > E.buy.cost + 0.005 ? `AMR and RCS: cost RM ${money(E.buy.cost)}, sold at RM ${money(E.buy.sell)}, a margin of ${E.buy.marginPct.toFixed(1)}% (only you see this).` : 'The AMR and RCS are at cost price: set a markup under Tax and markup.'}</p>` : ''}`;
   }
   function barHtml(R) {
     const T = R.totals, st = (l, v, cls) => `<div class="qb-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`, tx = num(R.Q.taxPct);
@@ -206,7 +212,7 @@
   }
   function summaries(R) {
     const Q = R.Q, rent = Q.type === 'rent', inc = R.lines.filter(l => l.on).length;
-    return { offer: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${quoteNo(S0)}`, items: `${inc} of ${R.lines.length} items`, tax: (num(Q.taxPct) ? `Tax ${num(Q.taxPct)}%` : 'No tax added') + (num(Q.markup) ? ` · markup ${num(Q.markup)}%` : ''),
+    return { offer: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${quoteNo(S0)}`, items: `${inc} of ${R.lines.length} items`, tax: (num(Q.taxPct) ? `Tax ${num(Q.taxPct)}%` : 'No tax added') + (num(Q.markup) ? ` · markup ${num(Q.markup)}%` : ' · no markup'),
       terms: `${num(Q.validityDays, 30)} days valid` + (String(Q.period || '').trim() ? ' · ' + Q.period : ''), excl: 'What is not included', svc: Q.service ? `${num(Q.perYear, 4)} visits a year` + (Q.optB.on ? ' · Option B' : '') : (Q.optB.on ? 'Option B' : 'Off') };
   }
   const sec = (id, title, sum, body) => `<details class="qsec" data-sec="${id}"${openSecs[id] ? ' open' : ''}><summary><span class="qs-ico">${svg(ICON[id])}</span><span class="qs-t">${title}</span><span class="qs-s" data-sum="${id}">${esc(sum)}</span>
@@ -220,8 +226,9 @@
       <label class="qtog"><span class="sw"><input type="checkbox" data-qf="internal" ${Q.internal ? 'checked' : ''}><i></i></span><span>Show cost and markup <small>only you see these; they are never printed</small></span></label>`;
     const tax = fld('Tax (SST)', `<div class="inp"><input type="number" min="0" step="any" data-qf="taxPct" value="${num(Q.taxPct)}"><i class="r">%</i></div>`, 'qf-s')
       + '<p class="qnote">The rate used in the selector tool, applied to every item except installation. Set 0 if tax is not charged.</p>'
-      + fld('Markup on every item', `<div class="inp"><input type="number" step="any" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
-      + '<p class="qnote">The prices start at the prices in the selector tool. Add a markup here for the price you quote (only you see it; an item you price by hand keeps its own).</p>';
+      + fld('Markup on the AMR and RCS', `<div class="inp"><input type="number" step="any" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
+      + '<p class="qnote">The selector tool prices for the AMR and the RCS are your cost: this is added on top (only you see it). Customisation, delivery and installation start at your usual selling prices; price any item by hand with Show cost and markup.</p>'
+      + '<button type="button" class="btn quiet qsave" data-save-markup>Use this markup for new quotations</button>';
     const terms = fld('Delivery terms', `<input data-qf="delivery" value="${esc(Q.delivery)}">`) + fld('Delivery period', `<input data-qf="period" value="${esc(Q.period)}" placeholder="e.g. 12 weeks from PO">`)
       + fld('Payment terms', `<textarea rows="3" data-qf="payment" placeholder="Filled in from the totals (rent: 50% / 50%; buy: 40% / 40% / 20%). Type here to change it.">${esc(Q.payment || '')}</textarea>`)
       + fld('Warranty', `<input data-qf="warranty" value="${esc(Q.warranty)}">`) + fld('Bank charges', `<textarea rows="2" data-qf="bank">${esc(Q.bank)}</textarea>`);
@@ -232,7 +239,7 @@
       <label class="qtog"><span class="sw"><input type="checkbox" data-qf="optB.on" ${Q.optB.on ? 'checked' : ''}><i></i></span><span>Offer a lower setup fee (option B) <small>the saving is paid back through a higher rental for a while</small></span></label>
       ${Q.optB.on ? `<div class="qgrid">${fld('Reduce setup by', rm(`<input type="number" min="0" step="any" data-qf="optB.reduction" value="${num(Q.optB.reduction) || ''}">`))}${fld('Paid back over', `<div class="inp"><input type="number" min="1" data-qf="optB.months" value="${num(Q.optB.months, 12)}"><i class="r">months</i></div>`)}</div>` : ''}`
       : '<p class="qnote">The maintenance and service page and option B are for rental quotations.</p>';
-    return `<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('offer', 'Offer', sm.offer, offer)}${sec('items', 'Items and prices', sm.items, items)}${sec('tax', 'Tax', sm.tax, tax)}${sec('terms', 'Terms and payment', sm.terms, terms)}${sec('excl', 'Exclusions and notes', sm.excl, excl)}${sec('svc', rent ? 'Service and option B' : 'Service', sm.svc, svc)}
+    return `<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('offer', 'Offer', sm.offer, offer)}${sec('items', 'Items and prices', sm.items, items)}${sec('tax', 'Tax and markup', sm.tax, tax)}${sec('terms', 'Terms and payment', sm.terms, terms)}${sec('excl', 'Exclusions and notes', sm.excl, excl)}${sec('svc', rent ? 'Service and option B' : 'Service', sm.svc, svc)}
       <p class="qhint">The proposal PDF never shows a price. <b>Download PDF</b> saves this quotation as its own PDF.</p>`;
   }
   function refresh(full) {
@@ -260,6 +267,7 @@
     if (bound) return; bound = true;
     const ed = $('#qEdit'), qz = $('#quote');
     ed.addEventListener('click', e => {
+      const sv = e.target.closest('[data-save-markup]'); if (sv) { try { localStorage.setItem(MKEY, String(num(ensure(S0).markup))); sv.textContent = 'Saved: new quotations start at ' + num(ensure(S0).markup) + '%'; } catch (err) { sv.textContent = 'Could not save on this browser'; } return; }
       const es = e.target.closest('[data-est]'); if (es) { ensure(S0).type = es.dataset.est; ensure(S0).exclusions = null; persist(); refresh(true); return; }
       const b = e.target.closest('.seg[data-q] [data-v]'); if (!b) return; const Q = ensure(S0), key = b.closest('.seg').dataset.q;
       Q[key] = key === 'termYears' ? +b.dataset.v : b.dataset.v;

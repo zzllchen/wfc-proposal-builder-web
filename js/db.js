@@ -14,7 +14,7 @@ window.WFCDB = {
   defaults: { customisation: 3.75, delivery: 2.5, installation: 3.125, taxPct: 10 },
   /* quote:start */
   // the Quotation tab's starting prices (RM), from the real rental quotation; every one is editable in the tab
-  quote: { routeChange: 0.5, rent: { 'reeman-pj15': 1.125 }, setup: { install: 3.0, rcs: 4.5, door: 1.5, callbox: 1.0, wifi: 3.75, server: 5.0 } },
+  quote: { markup: 0, routeChange: 0.5, rent: { 'reeman-pj15': 1.125 }, setup: { install: 3.0, rcs: 4.5, door: 1.5, callbox: 1.0, wifi: 3.75, server: 5.0 } },
   /* quote:end */
   models: [
     { id: 'reeman-pj15', name: '1.5T Pallet Jack AMR', type: 'Pallet Jack AMR', supplier: 'Reeman', payloadKg: 1500, liftMm: 205, hole: 'Normal', shape: 'Open', aisleM: 2.2, turnM: 1.365, outdoor: false, floor: 'Cement, Epoxy', wifi: false, unitPrice: 9.925, rcsUnit: 7.05, rcsAtQty1: false, img: 'amr-pj15', nav: 'Laser SLAM', speed: '1.0 / 1.5 m/s (laden / empty)', battery: '48 V / 30 Ah', safety: '5 m LiDAR and safe-touch edge', accuracy: '±100 mm' },
