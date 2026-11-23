@@ -545,9 +545,9 @@
   async function savePdf() {
     const doc = document.body.dataset.tab === 'quote' ? 'quotation' : '';
     if (doc && window.WFCQuote && !(await WFCQuote.beforeGenerate(S, D))) return;   // problems that would show on the quotation are listed first
-    if (!(await hasServer())) { hint('In the print window, untick “Headers and footers”'); printPdf(doc); return; }
+    if (!(await hasServer())) { hint('In the print window, untick “Headers and footers”'); if (doc && window.WFCQuote) WFCQuote.afterGenerate(S, D, null, ''); printPdf(doc); return; }
     busy(true); hint('Making the PDF…');
-    try { download(await serverPdf(doc), fileBase(doc) + '.pdf'); hint('PDF saved to your Downloads folder'); }
+    try { const blob = await serverPdf(doc); download(blob, fileBase(doc) + '.pdf'); hint('PDF saved to your Downloads folder'); if (doc && window.WFCQuote) WFCQuote.afterGenerate(S, D, blob, fileBase(doc) + '.pdf'); }   // the revision and a copy of the PDF go into the register
     catch (e) { hint('PDF failed: ' + (e.message || e)); }
     busy(false);
   }

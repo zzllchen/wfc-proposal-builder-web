@@ -91,7 +91,7 @@
     const Q = S.quote || (S.quote = {});
     const legacy = Q.v !== 2 ? { period: Q.period, delivery: Q.delivery, payment: Q.payment, warranty: Q.warranty, bank: Q.bank, exclusions: Q.exclusions, lines: Q.lines } : null;
     const d = { type: 'rent', termYears: 5, no: '', rev: 1, status: 'draft', date: '', validityDays: 30, currency: 'MYR', taxPct: num(DB.defaults && DB.defaults.taxPct, 0), taxLabel: 'SST', markup: defaultMarkup(), disc: { mode: 'pct', v: 0 },
-      head: {}, items: {}, sig: {}, terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: false, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
+      head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: false, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
     Q.v = 2;
     if (!Q.date) Q.date = (S.client && /^\d{4}-\d{2}-\d{2}/.test(S.client.date || '') && S.client.date.slice(0, 10)) || today();
@@ -199,6 +199,7 @@
     else if (Q.tbc.period) add('The delivery period is the standard one from the last rental quotation: confirm it for this job', 'period', true);
     const bi = Q.bankInfo || {}; if (!(bi.bank && bi.no)) add('The bank details are blank, so they are not printed', 'bank');
     if (!String(headVal(S, Q, 'contact') || '').trim()) add('Your contact person is blank', 'contact');
+    if (Q.no && !/^WFC-QT-\d{4}-\d{4}$/.test(Q.no)) add(`The quotation number ${Q.no} does not follow WFC-QT-YYYY-NNNN, so it is not kept in the shared register`, 'no');
     return { lines: L, totals: T, checks: info.map(i => i.msg), checkInfo: info, Q, type: ty };
   }
   // the estimated quotation for the proposal, both ways: what it costs to buy, and to rent (setup + monthly)
@@ -312,7 +313,7 @@
     const service = rent && Q.service ? `<section class="q-block q-service"><h3>AMR maintenance and service</h3><p>Service frequency: ${num(Q.perYear, 4)} times a year${num(Q.perYear, 4) === 4 ? ' (every quarter)' : ''}. Total service: ${qty} AMR${qty > 1 ? 's' : ''}.</p>
       <dl>${SERVICE.map(x => `<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join('')}</dl></section>` : '';
     const until = addDays(Q.date, num(Q.validityDays, 30));
-    const metaNo = E ? `<span class="ed" contenteditable="${CE}" spellcheck="false" role="textbox" data-f="no" data-ph="WFC-QT-${(Q.date || today()).slice(0, 4)}-0001" aria-label="Quotation number">${esc(Q.no)}</span>` : esc(quoteNo(S));
+    const metaNo = E ? `<span class="ed" contenteditable="${CE}" spellcheck="false" role="textbox" data-f="no" data-ph="Numbering…" aria-label="Quotation number">${esc(Q.no)}</span>` : esc(quoteNo(S));
     const metaDate = E ? `<input type="date" class="cell dt" data-f="date" value="${esc(Q.date)}" aria-label="Quotation date">` : esc(longDate(Q.date));
     const metaValid = E ? `<span class="inpx"><input class="cell num" inputmode="numeric" data-f="validityDays" value="${num(Q.validityDays, 30)}" aria-label="Valid for days"><i>days</i></span><small class="q-until">until ${esc(longDate(until))}</small>` : esc(longDate(until));
     const mrow = (label, html, val) => (E || String(val || '').trim()) ? `<tr><td>${label}</td><td>${html}</td></tr>` : '';   // the PDF leaves out a line with nothing in it
@@ -349,20 +350,107 @@
     assignNo(S); const Q = ensure(S), foot = `${quoteNo(S)}  ·  Rev ${num(Q.rev, 1)}  ·  ${DB.company.legal || DB.company.name}`.replace(/["\\\r\n]/g, '');
     return `<style>@page quote { @bottom-left { content: "${foot}"; } }</style><div class="qprint">${docHtml(S, D)}</div>`;
   }
-  // before the PDF: problems that would show on the page (no customer, no items, a missing price or quantity) are listed first
-  function beforeGenerate(S, D) {
-    const R = compute(S, D), block = R.checkInfo.filter(c => ['name', 'items', 'qty', 'price'].includes(c.key));
-    if (!block.length) return Promise.resolve(true);
+  /* ---------- the register on this PC (through the local server; a web copy has none and counts on its own) ---------- */
+  const reg = { p: null, on: false, list: [], at: 0 };
+  const webCopy = () => typeof location === 'undefined' || (location.protocol === 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname));
+  function api(path, body, raw) {
+    const init = { headers: { 'X-WFC': '1' }, cache: 'no-store' };
+    if (body !== undefined) { init.method = 'POST'; init.body = raw ? body : JSON.stringify(body); if (!raw) init.headers['Content-Type'] = 'application/json'; }
+    return fetch(path, init).then(r => r.json().catch(() => ({})).then(j => { if (!r.ok) { const e = new Error(j.error || String(r.status)); e.status = r.status; e.data = j; throw e; } return j; }));
+  }
+  const serverUp = () => reg.p || (reg.p = (webCopy() || typeof fetch !== 'function') ? Promise.resolve(false)
+    : fetch('api/ping', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).then(j => !!(j && j.ok && j.quotes)).catch(() => false).then(up => { reg.on = up; return up; }));
+  function loadList() {
+    reg.at = Date.now();
+    return serverUp().then(up => (up ? api('api/quotes').then(j => { reg.list = j.quotes || []; }) : null)).catch(() => { /* the list stays as it was */ }).then(() => { if (typeof document !== 'undefined') drawRegister(); });
+  }
+  const claiming = new Set();
+  function claimNo(S) {   // the number comes from the register when the tool runs from Start.bat, else from this browser's own counter
+    const Q = ensure(S); if (Q.no || claiming.has(Q)) return;
+    claiming.add(Q); const year = (Q.date || today()).slice(0, 4);
+    serverUp().then(up => (up ? api('api/quotes/next', { uid: Q.uid, year }).then(j => j.no) : null)).catch(() => null).then(no => {
+      claiming.delete(Q); const Q2 = S.quote;
+      if (!Q2.no) Q2.no = no || nextNo(year);
+      Q2.noOk = Q2.no;
+      if (S === S0) { persist(); refresh(true); }
+      if (D0) pushEntry(S, D0);
+    });
+  }
+  function entryOf(S, D) {
+    const R = compute(S, D), Q = R.Q, T = R.totals;
+    return { no: Q.no, uid: Q.uid, rev: num(Q.rev, 1), status: Q.status, customer: String(headVal(S, Q, 'toName') || ''), project: String(headVal(S, Q, 'project') || ''), currency: Q.currency, total: T.rent ? T.upfront : T.sum.grand, monthly: T.rent ? T.month.grand : 0, date: Q.date, type: Q.type };
+  }
+  function pushEntry(S, D, extra) {
+    const Q = ensure(S); if (!Q.no || !D) return Promise.resolve();
+    return serverUp().then(up => (up ? api('api/quotes/save', Object.assign(entryOf(S, D), extra || {})).then(loadList) : null)).catch(() => { /* try again at the next change */ });
+  }
+  let pushT = 0;
+  const schedulePush = () => { clearTimeout(pushT); pushT = setTimeout(() => { if (S0 && D0) pushEntry(S0, D0); }, 1500); };
+
+  /* ---------- revisions ----------
+     Rev 1 is what the customer was sent. After that a change goes into Rev 2, so Rev 1 stays exactly as it was: every revision keeps a full copy of the quotation (snapshot) with its status, date, total and note. */
+  const SNAP = ['type', 'termYears', 'date', 'validityDays', 'currency', 'taxPct', 'taxLabel', 'markup', 'disc', 'items', 'terms', 'excl', 'notes', 'service', 'perYear', 'accept', 'optB', 'bankInfo'];
+  const clone = o => JSON.parse(JSON.stringify(o === undefined ? null : o));
+  const STATUS = { draft: 'Draft', sent: 'Sent', accepted: 'Accepted' };
+  const isIssued = e => !!e && (e.status === 'sent' || e.status === 'accepted');
+  const revEntry = (Q, rev) => (Q.history || []).find(h => h.rev === rev);
+  const revEntryOf = e => ({ rev: e.rev, status: e.status, at: e.at, note: e.note || '', total: e.total, monthly: e.monthly || 0, currency: e.currency });
+  function snapshot(S, Q) { const o = {}; SNAP.forEach(k => { o[k] = clone(Q[k]); }); o.head = {}; ['toName', 'toAddress', 'attn', 'project', 'ref', 'contact', 'phone', 'email'].forEach(k => { o.head[k] = headVal(S, Q, k); }); return o; }
+  function applySnapshot(Q, snap) { SNAP.forEach(k => { Q[k] = clone(snap[k]); }); Q.head = clone(snap.head || {}); }
+  function freeze(S, D, status) {   // records the quotation as it is now under the current revision
+    const Q = ensure(S, D), T = compute(S, D).totals; Q.history = Q.history || [];
+    let e = revEntry(Q, Q.rev); if (!e) { e = { rev: Q.rev }; Q.history.push(e); }
+    Object.assign(e, { status: status || Q.status, at: new Date().toISOString(), note: Q.revNote || '', total: T.rent ? T.upfront : T.sum.grand, monthly: T.rent ? T.month.grand : 0, currency: Q.currency, snap: snapshot(S, Q) });
+    return e;
+  }
+  // sent (or accepted) and then changed: the changes belong in a new revision
+  const plain = o => JSON.stringify(o, (k, v) => (k === 'ed' ? undefined : v));   // what is on the page, without the bookkeeping of what was edited by hand
+  function lockedChanged(S, D) { const Q = ensure(S, D), e = revEntry(Q, Q.rev); return isIssued(e) && plain(snapshot(S, Q)) !== plain(e.snap); }
+  function startRevision(S, D, note) {
+    const Q = ensure(S, D), e0 = revEntry(Q, Q.rev);
+    if (!isIssued(e0)) freeze(S, D, Q.status);   // an issued revision keeps the copy that was issued; a draft is recorded as it was
+    Q.rev = num(Q.rev, 1) + 1; Q.status = 'draft'; Q.revNote = String(note || '').trim(); Q.date = today();
+    return Q.rev;
+  }
+  function revDoc(S, D, rev) {   // the page of an earlier revision, exactly as it was
+    const Q = ensure(S, D), e = revEntry(Q, rev); if (!e) return '';
+    return docHtml(Object.assign({}, S, { quote: Object.assign({}, clone(Q), clone(e.snap), { no: Q.no, rev: e.rev, status: e.status, history: [], revNote: e.note || '' }) }), D);
+  }
+  function ask(html, buttons) {   // a small dialog: resolves { m: the button pressed (null if closed), value: the text box, if any }
     return new Promise(res => {
       const dlg = document.createElement('dialog'); dlg.className = 'qdlg';
-      dlg.innerHTML = `<h3>Before you generate</h3><p class="warn"><b>These would show on the quotation:</b></p><ul>${block.map(c => `<li>${esc(c.msg)}</li>`).join('')}</ul>
-        <div class="qdlg-b"><button type="button" class="btn" data-m="fix">Go back and fix</button><button type="button" class="btn quiet" data-m="go">Generate anyway</button></div>`;
+      dlg.innerHTML = html + `<div class="qdlg-b">${buttons.map(b => `<button type="button" class="btn${b[2] ? ' ' + b[2] : ''}" data-m="${b[0]}">${esc(b[1])}</button>`).join('')}</div>`;
       (document.querySelector('#quote') || document.body).appendChild(dlg);
-      const done = v => { try { dlg.close(); } catch (e) { /* already closed */ } dlg.remove(); res(v); };
-      dlg.addEventListener('click', ev => { const b = ev.target.closest('[data-m]'); if (b) done(b.dataset.m === 'go'); });
-      dlg.addEventListener('cancel', ev => { ev.preventDefault(); done(false); });
+      const done = m => { const ta = dlg.querySelector('textarea'), value = ta ? ta.value : ''; try { dlg.close(); } catch (e) { /* already closed */ } dlg.remove(); res({ m, value }); };
+      dlg.addEventListener('click', ev => { const b = ev.target.closest('[data-m]'); if (b) done(b.dataset.m); });
+      dlg.addEventListener('cancel', ev => { ev.preventDefault(); done(null); });
       if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
     });
+  }
+  // before the PDF: a quotation that was sent and then changed is offered a new revision; problems that would show on the page (no customer, no items, a missing price or quantity) are listed
+  function beforeGenerate(S, D) {
+    const Q = ensure(S, D), block = compute(S, D).checkInfo.filter(c => ['name', 'items', 'qty', 'price'].includes(c.key));
+    const issuedStep = () => !lockedChanged(S, D) ? Promise.resolve(true)
+      : ask(`<h3>This quotation was already ${esc(revEntry(Q, Q.rev).status)}</h3><p>Rev ${Q.rev} went out and you have changed it since. A changed quotation should go out as <b>Rev ${Q.rev + 1}</b>, so Rev ${Q.rev} stays exactly as the customer has it.</p>`,
+        [['new', `Start Rev ${Q.rev + 1} and generate`], ['go', `Generate as Rev ${Q.rev} anyway`, 'quiet'], ['no', 'Cancel', 'quiet']]).then(r => {
+        if (r.m === 'new') { snap('rev' + Math.random()); const old = revEntry(Q, Q.rev); startRevision(S, D, ''); persist(); refresh(true); pushEntry(S, D, { rev: old.rev, revEntry: revEntryOf(old), snapshot: old.snap }).then(() => pushEntry(S, D)); return true; }
+        return r.m === 'go';
+      });
+    const problemsStep = () => !block.length ? Promise.resolve(true)
+      : ask(`<h3>Before you generate</h3><p class="warn"><b>These would show on the quotation:</b></p><ul>${block.map(c => `<li>${esc(c.msg)}</li>`).join('')}</ul>`, [['fix', 'Go back and fix'], ['go', 'Generate anyway', 'quiet']]).then(r => r.m === 'go');
+    return issuedStep().then(ok => ok && problemsStep());
+  }
+  // after the PDF: this revision is recorded (a copy of the quotation and of the PDF go into the register on this PC)
+  function afterGenerate(S, D, blob, file) {
+    const Q = ensure(S, D), e = freeze(S, D, Q.status);
+    e.pdfAt = new Date().toISOString(); if (file) e.pdf = file;
+    persist(); refresh(true);
+    return serverUp().then(up => {
+      if (!up || !Q.no) { toast(`Rev ${Q.rev} recorded in this project.`); return null; }
+      return pushEntry(S, D, { rev: Q.rev, revEntry: revEntryOf(e), snapshot: e.snap })
+        .then(() => (blob && file ? api(`api/quotes/pdf?no=${encodeURIComponent(Q.no)}&rev=${Q.rev}&name=${encodeURIComponent(file)}`, blob, true) : null))
+        .then(() => { loadList(); toast(`PDF saved. Rev ${Q.rev} and its PDF are in the register (${Q.no}).`); });
+    }).catch(() => toast('PDF saved. The register could not be reached.'));
   }
   // what you can add: blank, the AMR models, and the standard items (a blank price is shown as to confirm, never invented)
   function catalogItems(S, D, Q) {
@@ -383,7 +471,9 @@
   const ICON = {
     setup: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/>',
     price: '<path d="M19 5L5 19"/><circle cx="7" cy="7" r="2"/><circle cx="17" cy="17" r="2"/>',
-    more: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>'
+    more: '<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>',
+    revs: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/>',
+    reg: '<path d="M4 5h16v4H4z"/><path d="M4 9v10h16V9"/><path d="M10 13h4"/>'
   };
   const svg = p => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
   const seg = (key, val, opts) => `<div class="seg" role="group" data-q="${key}">${opts.map(o => `<button type="button" class="tab${String(val) === String(o[0]) ? ' active' : ''}" data-v="${o[0]}">${o[1]}</button>`).join('')}</div>`;
@@ -415,7 +505,7 @@
     <svg class="qs-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><div class="qs-b">${body}</div></details>`;
   function summaries(R) {
     const Q = R.Q, rent = Q.type === 'rent';
-    return { setup: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${Q.currency}`, price: (num(Q.markup) ? `Markup ${num(Q.markup)}%` : 'No markup') + (num(Q.disc.v) ? ' · discount' : ''), more: rent ? (Q.service ? `${num(Q.perYear, 4)} visits a year` : 'No service page') : 'Acceptance block' };
+    return { setup: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${Q.currency}`, price: (num(Q.markup) ? `Markup ${num(Q.markup)}%` : 'No markup') + (num(Q.disc.v) ? ' · discount' : ''), more: rent ? (Q.service ? `${num(Q.perYear, 4)} visits a year` : 'No service page') : 'Acceptance block', revs: `Rev ${num(Q.rev, 1)} · ${STATUS[Q.status] || 'Draft'}`, reg: reg.list.length ? `${reg.list.length} quotation${reg.list.length > 1 ? 's' : ''}` : '' };
   }
   function railHtml(R) {
     const Q = R.Q, rent = Q.type === 'rent', sm = summaries(R), s = sym(Q);
@@ -436,7 +526,7 @@
         + (Q.optB.on ? `<div class="qgrid">${fld('Reduce setup by', `<div class="inp"><i>${esc(s)}</i><input inputmode="decimal" data-qf="optB.reduction" value="${num(Q.optB.reduction) || ''}"></div>`)}${fld('Paid back over', `<div class="inp"><input inputmode="numeric" data-qf="optB.months" value="${num(Q.optB.months, 12)}"><i class="r">months</i></div>`)}</div>` : '') : '')
       + tog('accept', Q.accept, 'Customer acceptance block', 'chop and signature line for the customer')
       + '<button type="button" class="btn quiet qsave" data-save-bank>Use these bank details for new quotations</button>';
-    return `${staleHtml()}<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('setup', 'Quotation setup', sm.setup, setup)}${sec('price', 'Pricing', sm.price, price)}${sec('more', 'More', sm.more, more)}
+    return `${staleHtml()}<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('setup', 'Quotation setup', sm.setup, setup)}${sec('price', 'Pricing', sm.price, price)}${sec('more', 'More', sm.more, more)}${sec('revs', 'Revisions', sm.revs, revsHtml(R))}${reg.on ? sec('reg', 'Saved quotations', sm.reg, '<div id="qRegList">' + regRows() + '</div><p class="qnote">Every quotation number, its revisions and the PDFs are kept on this PC in the Quotations folder.</p>') : sec('reg', 'Quotation numbers', 'this browser', '<p class="qnote">Numbers are counted on this browser only. Start the tool with Start.bat to keep one shared register on this PC, with every revision and a copy of each PDF.</p>')}
       <p class="qhint">The proposal PDF never shows a price. <b>Download PDF</b> saves this quotation as its own PDF.</p>`;
   }
 
@@ -469,10 +559,65 @@
     }
     const bar = $('#qTotal'); if (bar) bar.innerHTML = barHtml(R);
     const st = $('#qStatus'); if (st) { st.className = 'qchip' + (R.checks.length ? '' : ' ok'); st.textContent = R.checks.length ? `${R.checks.length} to check` : 'Ready'; }
-    const no = $('#qNo'); if (no) no.textContent = (Q.no || quoteNo(S0)) + ' · Rev ' + num(Q.rev, 1);
+    const no = $('#qNo'); if (no) no.textContent = (Q.no || 'Numbering…') + ' · Rev ' + num(Q.rev, 1);
     const ss = $('#qStat'); if (ss && ss.value !== Q.status) ss.value = Q.status;
     const u = $('#qUndo'), r = $('#qRedo'); if (u) u.disabled = !hist.length; if (r) r.disabled = !redo.length;
-    if ($('#quote').dataset.qm === 'preview' && sheet) { sheet.innerHTML = docHtml(S0, D0); fit(); }
+    paintBanner(Q);
+    if ($('#quote').dataset.qm === 'preview' && sheet) { sheet.innerHTML = previewRev ? revDoc(S0, D0, previewRev) : docHtml(S0, D0); fit(); paintPrevBar(Q); }
+  }
+  /* ---------- revisions and the register on the screen ---------- */
+  let previewRev = null;
+  const rvDate = iso => (iso ? longDate(String(iso).slice(0, 10)) : '');
+  function paintBanner(Q) {   // sent, then changed: say so on top of the page
+    const b = $('#qBanner'); if (!b) return;
+    const lc = lockedChanged(S0, D0), e = revEntry(Q, Q.rev);
+    b.hidden = !lc;
+    if (lc) b.innerHTML = `<span><b>Rev ${num(Q.rev, 1)} was ${esc(e.status)}</b> and you have changed it since. Changes should go out as a new revision, so Rev ${num(Q.rev, 1)} stays as the customer has it.</span><button type="button" class="btn sm" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button>`;
+  }
+  function paintPrevBar(Q) {
+    const b = $('#qPrevBar'); if (!b) return;
+    const e = previewRev && revEntry(Q, previewRev); b.hidden = !e;
+    if (e) b.innerHTML = `<span>Previewing <b>Rev ${e.rev}</b> (${esc(STATUS[e.status] || e.status)}, ${esc(rvDate(e.at))}) as it was. Read only.</span><span class="qpb-b"><button type="button" class="btn quiet sm" data-restore-rev="${e.rev}">Restore this revision</button><button type="button" class="btn sm" data-back>Back to the current quotation</button></span>`;
+  }
+  function revsHtml(R) {
+    const Q = R.Q, hist = (Q.history || []).slice().sort((a, b) => b.rev - a.rev), cs = c => CURS[c] || c || 'RM';
+    const cur = `<div class="rv cur"><div class="rv-h"><b>Rev ${num(Q.rev, 1)}</b><span class="rvs ${esc(Q.status)}">${STATUS[Q.status] || 'Draft'}</span><small>current</small></div>${Q.revNote ? `<p>${esc(Q.revNote)}</p>` : ''}</div>`;
+    const rows = hist.map(h => `<div class="rv"><div class="rv-h"><b>Rev ${h.rev}</b><span class="rvs ${esc(h.status)}">${STATUS[h.status] || esc(h.status)}</span><small>${esc(rvDate(h.at))}</small><em>${esc(cs(h.currency))} ${money(h.total)}</em></div>${h.note ? `<p>${esc(h.note)}</p>` : ''}
+      <div class="rv-b"><button type="button" class="btn quiet sm" data-prev-rev="${h.rev}">Preview</button><button type="button" class="btn quiet sm" data-restore-rev="${h.rev}">Restore</button>${h.pdf && reg.on && Q.no ? `<a class="btn quiet sm" target="_blank" rel="noopener" href="api/quotes/file?no=${encodeURIComponent(Q.no)}&name=${encodeURIComponent(h.pdf)}">PDF</a>` : ''}</div></div>`).join('');
+    return `${cur}<button type="button" class="btn sm qsave" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button><p class="qnote">Keeps Rev ${num(Q.rev, 1)} exactly as it is now, and lets you change the quotation as Rev ${num(Q.rev, 1) + 1}.</p>`
+      + fld('What changes in this revision? (optional)', `<input data-qf="revNote" value="${esc(Q.revNote)}" placeholder="Shown here only, not on the quotation">`)
+      + (rows ? `<h4 class="qh">Recorded revisions</h4>${rows}` : '<p class="qnote">Nothing recorded yet. A revision is recorded when you generate the PDF or mark the quotation as sent.</p>');
+  }
+  function regRows() {
+    const cs = c => CURS[c] || c || '';
+    return reg.list.slice(0, 15).map(e => { const last = (e.revs || []).filter(r => r.pdf).slice(-1)[0];
+      return `<div class="rv"><div class="rv-h"><b>${esc(e.no)}</b><span class="rvs ${esc(e.status || 'draft')}">${STATUS[e.status] || 'Draft'}</span><small>Rev ${num(e.rev, 1)}</small></div><p>${esc(e.customer || 'No customer yet')}${e.project ? ' · ' + esc(e.project) : ''}</p>
+        <div class="rv-h"><em>${esc(cs(e.currency))} ${money(e.total)}</em><small>${esc(rvDate(e.updated))}</small>${last ? `<a class="lnk" target="_blank" rel="noopener" href="api/quotes/file?no=${encodeURIComponent(e.no)}&name=${encodeURIComponent(last.pdf)}">PDF</a>` : ''}</div></div>`; }).join('') || '<p class="qnote">Nothing in the register yet.</p>';
+  }
+  function drawRegister() { const el = $('#qRegList'); if (el) el.innerHTML = regRows(); const s = $('#qRail [data-sum="reg"]'); if (s) s.textContent = reg.list.length ? `${reg.list.length} quotation${reg.list.length > 1 ? 's' : ''}` : ''; }
+  function askRevision() {
+    const Q = ensure(S0, D0), n = num(Q.rev, 1);
+    ask(`<h3>Start Rev ${n + 1}</h3><p>Rev ${n} is kept exactly as it is now. The quotation becomes Rev ${n + 1}: a draft, dated today, that you can change.</p><label class="qf"><span>What changes in this revision? (optional)</span><textarea rows="3" placeholder="For example: 3 AMRs instead of 2, delivery in 12 weeks"></textarea></label>`, [['ok', `Start Rev ${n + 1}`], ['no', 'Cancel', 'quiet']]).then(r => {
+      if (r.m !== 'ok') return; const old = revEntry(ensure(S0, D0), n);
+      mutate('rev', () => { startRevision(S0, D0, r.value); }, () => { toast(`Rev ${n + 1} started. Rev ${n} is kept.`); const e = old || revEntry(S0.quote, n); (e ? pushEntry(S0, D0, { rev: e.rev, revEntry: revEntryOf(e), snapshot: e.snap }) : Promise.resolve()).then(() => pushEntry(S0, D0)); });
+    });
+  }
+  function askRestore(rev) {
+    const Q = ensure(S0, D0), e = revEntry(Q, rev); if (!e) return;
+    ask(`<h3>Restore Rev ${rev}?</h3><p>The quotation on the page is replaced with Rev ${rev} as it was on ${esc(rvDate(e.at))}. You can bring your present version back with Undo.</p>`, [['ok', `Restore Rev ${rev}`], ['no', 'Cancel', 'quiet']]).then(r => {
+      if (r.m !== 'ok') return; previewRev = null; $('#quote').dataset.qm = 'edit'; $$('#qMode .tab').forEach(t => t.classList.toggle('active', t.dataset.qm === 'edit'));
+      mutate('restore', q => { applySnapshot(q, e.snap); }, () => toast(`Rev ${rev} is back on the page.`));
+    });
+  }
+  function showRev(rev) { previewRev = rev; $('#quote').dataset.qm = 'preview'; $$('#qMode .tab').forEach(t => t.classList.toggle('active', t.dataset.qm === 'preview')); refresh(false); fit(); setTimeout(fit, 60); }
+  function verifyNo() {   // a number typed on the page: kept only if no other quotation has it
+    const Q = ensure(S0, D0), no = String(Q.no || '').trim();
+    if (!no) { Q.no = Q.noOk || ''; persist(); refresh(true); return; }
+    if (no === Q.noOk) { Q.no = no; return; }
+    Q.no = no;
+    serverUp().then(up => (up ? api('api/quotes/claim', { no, uid: Q.uid, old: Q.noOk }) : { ok: true })).then(() => { Q.noOk = no; persist(); refresh(false); pushEntry(S0, D0); }, err => {
+      if (err && err.status === 409) { const by = err.data && err.data.by; Q.no = Q.noOk; persist(); refresh(true); toast(`${no} is already used${by ? ' by ' + by : ''}. The number is back to ${Q.noOk}.`); }
+    });
   }
   function fit() {
     const box = $('#qPrev'), sheet = $('#qSheet'); if (!box || !sheet || !box.clientWidth) return;
@@ -481,7 +626,7 @@
   function toast(msg) { let t = $('#qToast'); if (!t) { t = document.createElement('div'); t.id = 'qToast'; t.setAttribute('role', 'status'); $('#quote').appendChild(t); } t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 3200); }
 
   /* ---------- editing ---------- */
-  function persist() { selfEdit = true; if (root.WFCApp && root.WFCApp.changed) root.WFCApp.changed(); }
+  function persist() { selfEdit = true; if (root.WFCApp && root.WFCApp.changed) root.WFCApp.changed(); schedulePush(); }
   function snap(key) {   // one undo step per burst of typing in the same box
     const now = Date.now(); if (key === lastKey && now - lastT < 1200) { lastT = now; return; }
     hist.push(JSON.stringify(S0.quote)); if (hist.length > 80) hist.shift(); redo = []; lastKey = key; lastT = now;
@@ -530,7 +675,8 @@
     if (el.dataset.f === 'date') onInput(e);
   }
   function onBlur(e) {   // tidy the number you typed
-    const el = e.target; if (!el.dataset || !el.dataset.rk || el.dataset.rk === 'on') return; const ctx = rowOf(el); if (!ctx || !ctx.r) return;
+    const el = e.target; if (el.dataset && el.dataset.f === 'no') { verifyNo(); return; }
+    if (!el.dataset || !el.dataset.rk || el.dataset.rk === 'on') return; const ctx = rowOf(el); if (!ctx || !ctx.r) return;
     const l = calcRow(ctx.r), k = el.dataset.rk; el.classList.remove('bad');
     if (k === 'qty') el.value = fmtQty(l.qty); else if (k === 'price') el.value = l.unit > 0 ? money(l.unit) : ''; else if (k === 'cost') el.value = l.base ? money(l.base) : ''; else if (k === 'disc') el.value = l.disc > 0 ? +l.disc.toFixed(2) : ''; else if (k === 'pct') el.value = l.pct ? +l.pct.toFixed(2) : '';
   }
@@ -621,15 +767,28 @@
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
     on('#qGen', () => { const b = document.getElementById('btnPdf'); if (b) b.click(); });
     on('#qUndo', () => restore(hist, redo)); on('#qRedo', () => restore(redo, hist)); on('#qSync', doSync);
-    const ss = $('#qStat'); if (ss) ss.addEventListener('change', () => { mutate('st', q => { q.status = ss.value; }); });
-    const mode = $('#qMode'); if (mode) mode.addEventListener('click', e => { const b = e.target.closest('[data-qm]'); if (!b) return; qz.dataset.qm = b.dataset.qm; mode.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === b)); refresh(false); fit(); setTimeout(fit, 60); });
+    const ss = $('#qStat'); if (ss) ss.addEventListener('change', () => {
+      const Q = ensure(S0, D0), want = ss.value;
+      if (want !== 'draft' && lockedChanged(S0, D0)) { ss.value = Q.status; toast(`Rev ${num(Q.rev, 1)} was already sent and has changed: start Rev ${num(Q.rev, 1) + 1} first.`); return; }
+      mutate('st', q => { q.status = want; if (want !== 'draft') freeze(S0, D0, want); else { const e = revEntry(q, q.rev); if (e) e.status = 'draft'; } },
+        () => { const e = revEntry(S0.quote, S0.quote.rev); pushEntry(S0, D0, e ? { rev: e.rev, revEntry: revEntryOf(e), snapshot: e.snap } : {}).then(() => pushEntry(S0, D0)); if (want !== 'draft') toast(`Rev ${S0.quote.rev} is recorded as ${STATUS[want].toLowerCase()}.`); });
+    });
+    qz.addEventListener('click', e => {
+      const t = e.target; let b;
+      if ((b = t.closest('[data-newrev]'))) askRevision();
+      else if ((b = t.closest('[data-prev-rev]'))) showRev(+b.dataset.prevRev);
+      else if ((b = t.closest('[data-restore-rev]'))) askRestore(+b.dataset.restoreRev);
+      else if (t.closest('[data-back]')) { previewRev = null; $('#quote').dataset.qm = 'edit'; $$('#qMode .tab').forEach(x => x.classList.toggle('active', x.dataset.qm === 'edit')); refresh(false); }
+    });
+    const mode = $('#qMode'); if (mode) mode.addEventListener('click', e => { const b = e.target.closest('[data-qm]'); if (!b) return; previewRev = null; qz.dataset.qm = b.dataset.qm; mode.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === b)); refresh(false); fit(); setTimeout(fit, 60); });
     if (window.ResizeObserver && $('#qPrev')) new ResizeObserver(fit).observe($('#qPrev'));
   }
   function update(S, D) {
     if (S !== lastS) { hist = []; redo = []; lastKey = ''; lastS = S; }
-    S0 = S; D0 = D; ensure(S, D); assignNo(S); bind();
+    S0 = S; D0 = D; const Q = ensure(S, D); if (Q.no && !Q.noOk) Q.noOk = Q.no; claimNo(S); bind();
     if (selfEdit) { selfEdit = false; refresh(false); return; }   // an edit made here: only the figures move (the boxes keep the cursor)
+    if (Date.now() - reg.at > 5000) loadList();
     refresh(true);
   }
-  root.WFCQuote = { update, printHtml, fileName, beforeGenerate, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
+  root.WFCQuote = { update, printHtml, fileName, beforeGenerate, afterGenerate, freeze, startRevision, lockedChanged, snapshot, applySnapshot, revDoc, claimNo, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
 })(window);

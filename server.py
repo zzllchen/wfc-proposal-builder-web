@@ -1,7 +1,7 @@
 """WFC Proposal Builder: small local server (double-click Start.bat).
 Serves the tool on http://localhost:8081/ and makes clean PDFs: the page posts the proposal to /api/pdf, Edge (or Chrome) prints it
 without the header and footer, and the PDF comes back. The same PDF is used to build the PowerPoint. Only this PC can reach it."""
-import base64, http.server, json, os, shutil, socket, struct, subprocess, sys, tempfile, threading, time, urllib.parse, urllib.request, uuid
+import base64, http.server, json, os, re, shutil, socket, struct, subprocess, sys, tempfile, threading, time, urllib.parse, urllib.request, uuid
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get('WFC_PORT', '8081'))
@@ -10,6 +10,12 @@ BROWSERS = [r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe', r'C
             r'C:\Program Files\Google\Chrome\Application\chrome.exe', r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe']
 BROWSER = next((b for b in BROWSERS if os.path.exists(b)), None)
 STATES, LOCK = {}, threading.Lock()
+# the quotation register: every quotation number ever given, one counter per year, each revision, and a copy of each PDF (this PC only; Quotations/ is never published)
+QUOTES = os.environ.get('WFC_QUOTES') or os.path.join(ROOT, 'Quotations')
+REG_LOCK = threading.Lock()
+NO_RE = re.compile(r'^WFC-QT-(\d{4})-(\d{4})$')
+FILE_RE = re.compile(r'^[^\\/:*?"<>|\x00-\x1f]{1,180}$')
+MAX_FILE = 60 * 1024 * 1024
 
 
 class WebSocket:
@@ -128,6 +134,51 @@ def make_pdf(state_bytes, doc=''):
             time.sleep(0.3)
 
 
+def reg_load():
+    try:
+        with open(os.path.join(QUOTES, 'register.json'), encoding='utf-8') as f: r = json.load(f)
+    except (OSError, ValueError):
+        r = {}
+    r.setdefault('seq', {}); r.setdefault('quotes', {})
+    return r
+
+
+def reg_save(r):
+    os.makedirs(QUOTES, exist_ok=True)
+    tmp = os.path.join(QUOTES, 'register.json.tmp')
+    with open(tmp, 'w', encoding='utf-8') as f: json.dump(r, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, os.path.join(QUOTES, 'register.json'))
+
+
+def now_iso():
+    return time.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+ENTRY_KEYS = ('customer', 'project', 'currency', 'rev', 'status', 'total', 'monthly', 'date', 'type')
+
+
+def put_entry(r, d):
+    """Creates or updates the register line for one quotation. Returns (entry, None), or (None, the entry that already holds that number)."""
+    no, uid = d.get('no'), str(d.get('uid') or '')[:40]
+    e = r['quotes'].get(no)
+    if e and e.get('uid') and uid and e['uid'] != uid:
+        return None, e
+    if not e:
+        e = r['quotes'][no] = {'no': no, 'uid': uid, 'created': now_iso(), 'revs': []}
+    if uid and not e.get('uid'): e['uid'] = uid
+    for k in ENTRY_KEYS:
+        if k in d and isinstance(d[k], (str, int, float)): e[k] = d[k][:200] if isinstance(d[k], str) else d[k]
+    e['updated'] = now_iso()
+    rv = d.get('revEntry')
+    if isinstance(rv, dict) and isinstance(rv.get('rev'), int):
+        cur = next((x for x in e['revs'] if x.get('rev') == rv['rev']), None)
+        if not cur:
+            cur = {'rev': rv['rev']}; e['revs'].append(cur); e['revs'].sort(key=lambda x: x['rev'])
+        for k in ('status', 'at', 'note', 'total', 'monthly', 'currency'):
+            if k in rv and isinstance(rv[k], (str, int, float)): cur[k] = rv[k][:500] if isinstance(rv[k], str) else rv[k]
+    return e, None
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **k):
         super().__init__(*a, directory=ROOT, **k)
@@ -157,15 +208,94 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         p = urllib.parse.urlparse(self.path).path
+        if p.lower().startswith('/quotations'):   # the register is only reachable through /api/quotes
+            return self._json(404, {'error': 'not found'})
         if p == '/api/ping':
-            return self._json(200, {'ok': True, 'pdf': bool(BROWSER)})
+            return self._json(200, {'ok': True, 'pdf': bool(BROWSER), 'quotes': True})
+        if p == '/api/quotes':
+            with REG_LOCK: r = reg_load()
+            lst = sorted(r['quotes'].values(), key=lambda e: e.get('updated', ''), reverse=True)
+            return self._json(200, {'quotes': lst, 'seq': r['seq']})
+        if p == '/api/quotes/file':
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            no, name = (q.get('no') or [''])[0], (q.get('name') or [''])[0]
+            if not NO_RE.match(no) or not FILE_RE.match(name) or name.startswith('.'):
+                return self._json(400, {'error': 'bad request'})
+            path = os.path.join(QUOTES, no, name)
+            if not os.path.isfile(path):
+                return self._json(404, {'error': 'no such file'})
+            with open(path, 'rb') as f: data = f.read()
+            ctype = 'application/pdf' if name.lower().endswith('.pdf') else 'application/json'
+            self.send_response(200); self.send_header('Content-Type', ctype); self.send_header('Content-Length', str(len(data)))
+            self.send_header('Content-Disposition', "inline; filename*=UTF-8''" + urllib.parse.quote(name)); self.end_headers(); self.wfile.write(data); return
         if p.startswith('/api/state/'):
             data = STATES.get(p.rsplit('/', 1)[-1])
             return self._send(200, data, 'application/json') if data else self._json(404, {'error': 'unknown state'})
         return super().do_GET()
 
+    def _quotes_post(self, p):
+        if self.headers.get('X-WFC') != '1':   # a web page on another site cannot add this header, so it cannot write to the register
+            return self._json(403, {'error': 'not allowed'})
+        n = int(self.headers.get('Content-Length', '0'))
+        if n < 0 or n > MAX_FILE:
+            return self._json(400, {'error': 'too large'})
+        body = self.rfile.read(n) if n else b''
+        if p == '/api/quotes/pdf':
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            no, name, rev = (q.get('no') or [''])[0], (q.get('name') or [''])[0], (q.get('rev') or ['0'])[0]
+            if not NO_RE.match(no) or not FILE_RE.match(name) or name.startswith('.') or not name.lower().endswith('.pdf') or not rev.isdigit() or not body.startswith(b'%PDF'):
+                return self._json(400, {'error': 'bad request'})
+            with REG_LOCK:
+                r = reg_load(); e = r['quotes'].get(no)
+                if not e: return self._json(404, {'error': 'unknown quotation number'})
+                os.makedirs(os.path.join(QUOTES, no), exist_ok=True)
+                with open(os.path.join(QUOTES, no, name), 'wb') as f: f.write(body)
+                cur = next((x for x in e['revs'] if x.get('rev') == int(rev)), None)
+                if not cur: cur = {'rev': int(rev)}; e['revs'].append(cur); e['revs'].sort(key=lambda x: x['rev'])
+                cur['pdf'] = name; cur['pdfAt'] = now_iso(); e['updated'] = now_iso()
+                reg_save(r)
+            return self._json(200, {'ok': True})
+        try:
+            d = json.loads(body or b'{}')
+            assert isinstance(d, dict)
+        except (ValueError, AssertionError):
+            return self._json(400, {'error': 'bad request'})
+        with REG_LOCK:
+            r = reg_load()
+            if p == '/api/quotes/next':
+                uid = str(d.get('uid') or '')[:40]
+                year = str(d.get('year') or time.strftime('%Y'))
+                if not re.match(r'^\d{4}$', year): return self._json(400, {'error': 'bad year'})
+                mine = next((e for e in r['quotes'].values() if uid and e.get('uid') == uid), None)
+                if mine: return self._json(200, {'no': mine['no']})   # asked twice for the same quotation: same number, none wasted
+                seq = int(r['seq'].get(year, 0)) + 1
+                while 'WFC-QT-%s-%04d' % (year, seq) in r['quotes']: seq += 1
+                no = 'WFC-QT-%s-%04d' % (year, seq); r['seq'][year] = seq
+                put_entry(r, {'no': no, 'uid': uid, 'status': 'draft', 'rev': 1}); reg_save(r)
+                return self._json(200, {'no': no})
+            if p in ('/api/quotes/claim', '/api/quotes/save'):
+                no = str(d.get('no') or '')
+                m = NO_RE.match(no)
+                if not m: return self._json(200, {'ok': True, 'registered': False})   # a number typed in another style is not kept in the register
+                e, taken = put_entry(r, d)
+                if taken: return self._json(409, {'error': 'taken', 'by': taken.get('customer') or '', 'no': no})
+                if int(r['seq'].get(m.group(1), 0)) < int(m.group(2)): r['seq'][m.group(1)] = int(m.group(2))
+                old = str(d.get('old') or '')   # the number this quotation had before: dropped if nothing was ever issued under it
+                if old and old != no and old in r['quotes'] and r['quotes'][old].get('uid') == e.get('uid') and not any(x.get('pdf') or x.get('status') in ('sent', 'accepted') for x in r['quotes'][old].get('revs', [])):
+                    del r['quotes'][old]
+                snap = d.get('snapshot')
+                if p == '/api/quotes/save' and isinstance(snap, dict) and isinstance(d.get('rev'), int):
+                    os.makedirs(os.path.join(QUOTES, no), exist_ok=True)
+                    with open(os.path.join(QUOTES, no, 'Rev%d.json' % d['rev']), 'w', encoding='utf-8') as f: json.dump(snap, f, ensure_ascii=False)
+                reg_save(r)
+                return self._json(200, {'ok': True, 'registered': True})
+        return self._json(404, {'error': 'not found'})
+
     def do_POST(self):
-        if urllib.parse.urlparse(self.path).path != '/api/pdf':
+        p = urllib.parse.urlparse(self.path).path
+        if p.startswith('/api/quotes/'):
+            return self._quotes_post(p)
+        if p != '/api/pdf':
             return self._json(404, {'error': 'not found'})
         doc = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('doc') or [''])[0]
         doc = doc if doc in ('quotation',) else ''

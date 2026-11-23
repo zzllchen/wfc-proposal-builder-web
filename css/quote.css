@@ -91,6 +91,25 @@
 .sw.sm i::after { width: 12px; height: 12px; top: 3px; left: 3px; }
 .sw.sm input:checked + i::after { transform: translateX(12px); }
 
+/* revisions, the register list, and the notices on the page */
+.qbanner { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding: 10px 16px; background: #FFF1C9; color: #6B4A00; font-size: 13px; line-height: 1.4; border-bottom: 1px solid #F3E4A6; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+.qbanner[hidden], .qprevbar[hidden] { display: none; }
+.qprevbar { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; padding: 10px 16px; background: #EAF1FF; color: #1E3A8A; font-size: 13px; border-bottom: 1px solid #C9D8F8; }
+.qpb-b { display: flex; gap: 8px; flex-wrap: wrap; }
+.rv { padding: 10px 0; border-top: 1px solid #EEF1F6; }
+.rv.cur { border-top: 0; padding-top: 12px; }
+.rv-h { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 13px; }
+.rv-h b { font-weight: 700; color: #0B1220; font-variant-numeric: tabular-nums; }
+.rv-h small { color: #8793A8; font-size: 12px; }
+.rv-h em { font-style: normal; font-weight: 600; color: #204CBA; font-variant-numeric: tabular-nums; margin-left: auto; }
+.rv p { margin: 4px 0 0; font-size: 12.5px; color: #5B6577; line-height: 1.45; }
+.rv-b { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.rv-b .btn { min-height: 30px; padding: 0 10px; font-size: 12.5px; }
+.rvs { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 8px; border-radius: 99px; background: #EEF1F6; color: #5B6577; }
+.rvs.sent { background: #E6EEFF; color: #204CBA; }
+.rvs.accepted { background: #E3F5EA; color: #11713F; }
+.qh { margin: 14px 0 0; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #8793A8; }
+
 /* a dialog (Sync from proposal) and a short message */
 .qdlg { border: 0; border-radius: 18px; padding: 22px 24px; width: min(460px, 92vw); color: #0B1220; box-shadow: 0 24px 60px rgba(11,18,32,.32); }
 .qdlg::backdrop { background: rgba(11,18,32,.45); }
@@ -98,6 +117,7 @@
 .qdlg p { margin: 8px 0; font-size: 14px; line-height: 1.5; }
 .qdlg p.warn { color: #8A5A00; margin-bottom: 2px; }
 .qdlg ul { margin: 4px 0 8px; padding-left: 20px; font-size: 14px; }
+.qdlg textarea { width: 100%; padding: 9px 12px; border: 1px solid var(--field); border-radius: 10px; font: inherit; font-size: 14px; resize: vertical; }
 .qdlg-b { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 #qToast { position: absolute; left: 50%; bottom: 84px; transform: translate(-50%, 12px); background: #0B1220; color: #fff; padding: 10px 18px; border-radius: 99px; font-size: 13px; max-width: 90%; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 40; }
 #qToast.on { opacity: 1; transform: translate(-50%, 0); }
