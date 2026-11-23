@@ -518,7 +518,7 @@
   }
 
   /* ---------- files ---------- */
-  function fileBase(doc) { return `${S.client.name || 'Client'} - ${S.title} ${doc === 'quotation' ? 'Quotation' : 'Proposal'}`.replace(/[\\/:*?"<>|]+/g, ' '); }
+  function fileBase(doc) { if (doc === 'quotation' && window.WFCQuote) return WFCQuote.fileName(S); return `${S.client.name || 'Client'} - ${S.title} ${doc === 'quotation' ? 'Quotation' : 'Proposal'}`.replace(/[\\/:*?"<>|]+/g, ' '); }
   function fillPrint(doc) { const q = (doc || printDoc) === 'quotation' && window.WFCQuote; $('#printRoot').innerHTML = q ? WFCQuote.printHtml(S, D) : included().map((s, i) => wrapSlide(s, i + 1)).join(''); }
   function printPdf(doc) { renderAll(); fillPrint(doc); document.title = fileBase(doc); setTimeout(() => window.print(), 80); }
 
@@ -544,6 +544,7 @@
   }
   async function savePdf() {
     const doc = document.body.dataset.tab === 'quote' ? 'quotation' : '';
+    if (doc && window.WFCQuote && !(await WFCQuote.beforeGenerate(S, D))) return;   // problems that would show on the quotation are listed first
     if (!(await hasServer())) { hint('In the print window, untick “Headers and footers”'); printPdf(doc); return; }
     busy(true); hint('Making the PDF…');
     try { download(await serverPdf(doc), fileBase(doc) + '.pdf'); hint('PDF saved to your Downloads folder'); }

@@ -315,27 +315,55 @@
     const metaNo = E ? `<span class="ed" contenteditable="${CE}" spellcheck="false" role="textbox" data-f="no" data-ph="WFC-QT-${(Q.date || today()).slice(0, 4)}-0001" aria-label="Quotation number">${esc(Q.no)}</span>` : esc(quoteNo(S));
     const metaDate = E ? `<input type="date" class="cell dt" data-f="date" value="${esc(Q.date)}" aria-label="Quotation date">` : esc(longDate(Q.date));
     const metaValid = E ? `<span class="inpx"><input class="cell num" inputmode="numeric" data-f="validityDays" value="${num(Q.validityDays, 30)}" aria-label="Valid for days"><i>days</i></span><small class="q-until">until ${esc(longDate(until))}</small>` : esc(longDate(until));
+    const mrow = (label, html, val) => (E || String(val || '').trim()) ? `<tr><td>${label}</td><td>${html}</td></tr>` : '';   // the PDF leaves out a line with nothing in it
     return `<div class="qdoc${E ? ' edit' : ''}">
       <header class="q-head"><div class="q-brand"><img src="${root.WFC_IMG && root.WFC_IMG.logo || ''}" alt=""><div><b>${esc(co.legal || co.name)}</b><span>${co.regNo ? 'Company No. ' + esc(co.regNo) : ''}</span><span>${esc(co.address)}</span><span>${esc(co.web)}</span></div></div>
         <div class="q-title"><h1>QUOTATION</h1><table class="q-meta"><tr><td>Quotation no.</td><td>${metaNo}</td></tr><tr><td>Revision</td><td>Rev ${num(Q.rev, 1)}</td></tr><tr><td>Date</td><td>${metaDate}</td></tr><tr><td>Valid until</td><td>${metaValid}</td></tr>
-        <tr><td>Your ref.</td><td>${ed('head.ref', hv('ref'), 'Customer reference', { label: 'Your reference' })}</td></tr>
-        <tr><td>Our contact</td><td>${ed('head.contact', hv('contact'), 'Contact person', { label: 'Our contact person' })}</td></tr><tr><td>Phone</td><td>${ed('head.phone', hv('phone'), 'Phone', { label: 'Phone' })}</td></tr><tr><td>Email</td><td>${ed('head.email', hv('email'), 'Email', { label: 'Email' })}</td></tr></table></div></header>
+        ${mrow('Your ref.', ed('head.ref', hv('ref'), 'Customer reference', { label: 'Your reference' }), hv('ref'))}${mrow('Our contact', ed('head.contact', hv('contact'), 'Contact person', { label: 'Our contact person' }), hv('contact'))}${mrow('Phone', ed('head.phone', hv('phone'), 'Phone', { label: 'Phone' }), hv('phone'))}${mrow('Email', ed('head.email', hv('email'), 'Email', { label: 'Email' }), hv('email'))}</table></div></header>
       <section class="q-to"><div><small>Quoted to</small><b>${ed('head.toName', nm, 'Customer name', { label: 'Customer name', print: 'Customer name' })}</b>${E || hv('toAddress') ? `<p>${ed('head.toAddress', hv('toAddress'), 'Customer address', { ml: 1, label: 'Customer address' })}</p>` : ''}${E || hv('attn') ? `<p>${E ? 'Attn: ' : 'Attn: '}${ed('head.attn', hv('attn'), 'Contact person', { label: 'Attention' })}</p>` : ''}</div>
         <div><small>Project</small><b>${ed('head.project', hv('project'), 'Project name', { label: 'Project name' })}</b><p>${esc(M.name || '')}${qty ? `, ${qty} unit${qty > 1 ? 's' : ''}` : ''}</p></div></section>
       <p class="q-intro">${hv('attn') ? `Dear ${esc(hv('attn'))},` : 'Dear Sir or Madam,'}<br>Thank you for your enquiry. We are pleased to quote as follows.</p>
-      <table class="q-table${E ? ' edit' : ''}"><thead><tr><th>No.</th><th>Description</th><th>Qty</th><th>UOM</th><th>Unit price (${esc(s)})</th>${showDisc ? '<th>Disc.</th>' : ''}<th>Amount (${esc(s)})</th>${E ? '<th class="act"></th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
+      <table class="q-table${E ? ' edit' : ''}"><thead><tr><th>No.</th><th>Description</th><th>Qty</th><th>UOM</th><th>Unit price (${esc(s)})</th>${showDisc ? '<th class="nw">Disc.</th>' : ''}<th>Amount (${esc(s)})</th>${E ? '<th class="act"></th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
       ${E ? `<div class="q-add">${catalog}</div>` : ''}
       <div class="q-totals"${E ? ' id="qTots"' : ''}>${totalsHtml(S, Q, R)}</div>${sumBox}
       <section class="q-block"><h3>Terms</h3>${E ? `<div class="q-terms-e">${termRows}</div><button type="button" class="btn quiet sm" data-act="termadd">+ Add a term</button>` : `<dl class="q-terms">${termRows}</dl>`}</section>
       ${E || excl.length ? `<section class="q-block"><h3>Exclusions</h3>${exclHtml}</section>` : ''}
       ${bankHtml}
-      ${service}
+      <div class="q-end">${service}
       ${E || Q.notes ? `<section class="q-block"><h3>Notes</h3><p>${ed('notes', Q.notes, 'Anything else you want on the quotation (optional)', { ml: 1, label: 'Notes' })}</p></section>` : ''}
       <section class="q-sign${Q.accept ? ' two' : ''}"><div><p>Best regards,<br><b>${esc(co.legal || co.name)}</b></p><div class="q-line"></div><p>${esc(hv('contact'))}<br><small>Authorised signature</small></p></div>
-        ${Q.accept ? `<div><p>${esc(T_.accept)}<br><b>${esc(nm || 'The customer')}</b></p><div class="q-line"></div><p><small>Name, date, chop and signature</small></p></div>` : ''}</section>
+        ${Q.accept ? `<div><p>${esc(T_.accept)}<br><b>${esc(nm || 'The customer')}</b></p><div class="q-line"></div><p><small>Name, date, chop and signature</small></p></div>` : ''}</section></div>
     </div>`;
   }
-  const printHtml = (S, D) => { assignNo(S); return `<div class="qprint">${docHtml(S, D)}</div>`; };
+  // Quotation_WFC-QT-2026-0001_Customer-Name.pdf (the legal ending is left out; a revision adds _Rev2)
+  const LEGAL = ['sdn', 'bhd', 'berhad', 'ltd', 'limited', 'pte', 'inc', 'corp', 'llc', 'plc', 'co'];
+  function fileName(S) {
+    const Q = ensure(S), no = assignNo(S);
+    const words = String(headVal(S, Q, 'toName') || '').replace(/[.,]/g, '').replace(/[\/:*?"<>|()\[\]{}&'#%]+/g, ' ').split(/\s+/).filter(w => w && !LEGAL.includes(w.toLowerCase())), keep = [];
+    for (const w of words) { if (keep.length && (keep.join('-') + '-' + w).length > 40) break; keep.push(w); }   // whole words, about 40 characters at most
+    const name = keep.join('-').slice(0, 60);
+    return `Quotation_${no}${num(Q.rev, 1) > 1 ? '_Rev' + num(Q.rev, 1) : ''}_${name || 'Customer'}`;
+  }
+  // the PDF's footer carries the quotation number and revision on every page, with "Page x of y" on the right (app.css)
+  function printHtml(S, D) {
+    assignNo(S); const Q = ensure(S), foot = `${quoteNo(S)}  ·  Rev ${num(Q.rev, 1)}  ·  ${DB.company.legal || DB.company.name}`.replace(/["\\\r\n]/g, '');
+    return `<style>@page quote { @bottom-left { content: "${foot}"; } }</style><div class="qprint">${docHtml(S, D)}</div>`;
+  }
+  // before the PDF: problems that would show on the page (no customer, no items, a missing price or quantity) are listed first
+  function beforeGenerate(S, D) {
+    const R = compute(S, D), block = R.checkInfo.filter(c => ['name', 'items', 'qty', 'price'].includes(c.key));
+    if (!block.length) return Promise.resolve(true);
+    return new Promise(res => {
+      const dlg = document.createElement('dialog'); dlg.className = 'qdlg';
+      dlg.innerHTML = `<h3>Before you generate</h3><p class="warn"><b>These would show on the quotation:</b></p><ul>${block.map(c => `<li>${esc(c.msg)}</li>`).join('')}</ul>
+        <div class="qdlg-b"><button type="button" class="btn" data-m="fix">Go back and fix</button><button type="button" class="btn quiet" data-m="go">Generate anyway</button></div>`;
+      (document.querySelector('#quote') || document.body).appendChild(dlg);
+      const done = v => { try { dlg.close(); } catch (e) { /* already closed */ } dlg.remove(); res(v); };
+      dlg.addEventListener('click', ev => { const b = ev.target.closest('[data-m]'); if (b) done(b.dataset.m === 'go'); });
+      dlg.addEventListener('cancel', ev => { ev.preventDefault(); done(false); });
+      if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    });
+  }
   // what you can add: blank, the AMR models, and the standard items (a blank price is shown as to confirm, never invented)
   function catalogItems(S, D, Q) {
     const st = (DB.quote || {}).setup || {}, L = [{ name: 'New item', sub: '', specs: '', uom: 'unit', base: 0 }];
@@ -591,6 +619,7 @@
     rail.addEventListener('toggle', e => { const d = e.target.closest && e.target.closest('details.qsec'); if (d) openSecs[d.dataset.sec] = d.open; }, true);
     document.addEventListener('click', e => { $$('#qPaper details.rmenu[open], #qPaper details.addmenu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
+    on('#qGen', () => { const b = document.getElementById('btnPdf'); if (b) b.click(); });
     on('#qUndo', () => restore(hist, redo)); on('#qRedo', () => restore(redo, hist)); on('#qSync', doSync);
     const ss = $('#qStat'); if (ss) ss.addEventListener('change', () => { mutate('st', q => { q.status = ss.value; }); });
     const mode = $('#qMode'); if (mode) mode.addEventListener('click', e => { const b = e.target.closest('[data-qm]'); if (!b) return; qz.dataset.qm = b.dataset.qm; mode.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === b)); refresh(false); fit(); setTimeout(fit, 60); });
@@ -602,5 +631,5 @@
     if (selfEdit) { selfEdit = false; refresh(false); return; }   // an edit made here: only the figures move (the boxes keep the cursor)
     refresh(true);
   }
-  root.WFCQuote = { update, printHtml, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
+  root.WFCQuote = { update, printHtml, fileName, beforeGenerate, compute, estimate, ensure, docHtml, syncPlan, applySync, setMarkup, setPrice, parseNum, headVal, assignNo, nextNo, defaultTerms };
 })(window);
