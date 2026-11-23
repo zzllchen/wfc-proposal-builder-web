@@ -115,6 +115,7 @@
   /* ---------- the items, made from the proposal ---------- */
   function defs(S, D, Q, type) {
     const M = (D && D.model) || {}, qty = Math.max(1, (D && D.qty) || 1), rent = type === 'rent', ps = (S.layoutPlan && S.layoutPlan.points) || [], K = DB.quote || {}, st = K.setup || {};
+    const FILL = !!K.prefill, site = v => (FILL ? num(v) : 0);   // the site charges (customisation, delivery, installation, door, call box, WiFi, server) differ every time: they start blank for you to fill in
     const doors = ps.filter(p => p.kind === 'door').length, stations = ps.filter(p => p.kind === 'pick').length || Math.max(1, num(S.scenario && S.scenario.stations, 1));
     const swap = S.fleet && S.fleet.strategy === 'swap';
     const L = [], s = (a, extra) => a.concat(extra || []);
@@ -124,7 +125,7 @@
       const known = num((K.rent || {})[M.id]), ref = DB.models.find(m => m.id === 'reeman-pj15'), ratio = ref && K.rent && K.rent['reeman-pj15'] ? K.rent['reeman-pj15'] / ref.unitPrice : 0, guess = !known && ratio && M.unitPrice ? Math.round(M.unitPrice * ratio / 100) * 100 : 0;
       L.push({ id: 'rent', label: 'AMR rental contract', sub: M.name, qty, uom: 'unit / month', base: known || guess, est: !known && guess > 0, taxable: true, monthly: true,
         bullets: s(amr, [`Based on a ${Q.termYears}-year contract`, 'Rental contract includes AMR maintenance and service']) });
-      L.push({ id: 'install', label: inst, qty: 1, uom: 'LOT', base: num(st.install), taxable: false, bullets: SPEC.install });
+      L.push({ id: 'install', label: inst, qty: 1, uom: 'LOT', base: site(st.install), taxable: false, bullets: SPEC.install });
       L.push({ id: 'rcs', label: 'Robot Control System (RCS)', qty: 1, uom: 'LOT', base: num(st.rcs), taxable: true, bullets: SPEC.rcs });
     } else {
       const P = C.purchaseLines({ unitPrice: M.unitPrice, rcsUnit: M.rcsUnit, rcsAtQty1: M.rcsAtQty1 }, qty, DB.defaults);
@@ -132,18 +133,18 @@
       L.push({ id: 'hw', label: 'AMR hardware', sub: M.name, qty, uom: 'unit', base: pl.hw.base, taxable: true, cost: true, bullets: amr });
       if (pl.rcs.base > 0) L.push({ id: 'rcs', label: 'Robot Control System (RCS) and system', qty: 1, uom: 'LOT', base: pl.rcs.base, taxable: true, cost: true,   // (one unit of a model that does not include it has none: add it from Add an item)
         bullets: [SPEC.rcs[0], 'Perpetual licence including user management, map management and an operational dashboard'] });
-      L.push({ id: 'custom', label: 'Customisation', qty: 1, uom: 'LOT', base: pl.custom.base, taxable: true, bullets: ['Setup of the AMR for the site and the pallet'] });
-      L.push({ id: 'delivery', label: 'Delivery', qty: 1, uom: 'LOT', base: pl.delivery.base, taxable: true, bullets: [T_.delivery] });
-      L.push({ id: 'install', label: inst, qty: 1, uom: 'LOT', base: pl.install.base, taxable: false, bullets: SPEC.install });
+      L.push({ id: 'custom', label: 'Customisation', qty: 1, uom: 'LOT', base: site(pl.custom.base), taxable: true, bullets: ['Setup of the AMR for the site and the pallet'] });
+      L.push({ id: 'delivery', label: 'Delivery', qty: 1, uom: 'LOT', base: site(pl.delivery.base), taxable: true, bullets: [T_.delivery] });
+      L.push({ id: 'install', label: inst, qty: 1, uom: 'LOT', base: site(pl.install.base), taxable: false, bullets: SPEC.install });
     }
-    if (doors) L.push({ id: 'door', label: 'Automatic shuttle door integration and interlocking', qty: doors, uom: doors > 1 ? 'doors' : 'door', base: num(st.door), taxable: true, bullets: SPEC.door });
-    L.push({ id: 'callbox', label: 'Wireless call box and station push-button system', qty: 1, uom: 'LOT', base: num(st.callbox), taxable: true, bullets: [SPEC.callbox[0] + ` (${stations} station${stations > 1 ? 's' : ''})`] });
+    if (doors) L.push({ id: 'door', label: 'Automatic shuttle door integration and interlocking', qty: doors, uom: doors > 1 ? 'doors' : 'door', base: site(st.door), taxable: true, bullets: SPEC.door });
+    L.push({ id: 'callbox', label: 'Wireless call box and station push-button system', qty: 1, uom: 'LOT', base: site(st.callbox), taxable: true, bullets: [SPEC.callbox[0] + ` (${stations} station${stations > 1 ? 's' : ''})`] });
     if (swap && D && D.fleet && D.fleet.ok) {
       const x = (D.fleet.swap && D.fleet.swap.extraBatteries) || 0;
       if (x > 0) L.push({ id: 'spare', label: 'Spare batteries', qty: x, uom: 'unit', base: 0, taxable: true, bullets: ['One spare battery per AMR for hand swapping, so the AMR does not wait to charge'] });
     }
-    L.push({ id: 'wifi', label: 'WiFi infrastructure setup', optional: true, qty: 1, uom: 'LOT', base: num(st.wifi), taxable: true, bullets: SPEC.wifi });
-    L.push({ id: 'server', label: 'Server and monitoring station', optional: true, qty: 1, uom: 'LOT', base: num(st.server), taxable: true, bullets: SPEC.server });
+    L.push({ id: 'wifi', label: 'WiFi infrastructure setup', optional: true, qty: 1, uom: 'LOT', base: site(st.wifi), taxable: true, bullets: SPEC.wifi });
+    L.push({ id: 'server', label: 'Server and monitoring station', optional: true, qty: 1, uom: 'LOT', base: site(st.server), taxable: true, bullets: SPEC.server });
     return L;
   }
   const mkRow = (d, Q) => ({ id: d.id, src: true, name: d.label, sub: d.sub || '', specs: (d.bullets || []).join('\n'), qty: d.qty, uom: d.uom, base: d.base || 0, pct: d.cost ? num(Q.markup) : 0, disc: 0,
@@ -303,7 +304,7 @@
   }
   function totalsHtml(S, Q, R) {
     const T = R.totals, s = sym(Q), tx = num(Q.taxPct), lab = `${esc(Q.taxLabel || 'Tax')} ${tx}%`;
-    const block = (title, x, grandLabel) => `<table class="q-tot">${title ? `<caption>${title}</caption>` : ''}<tr><td>Subtotal</td><td>${money(x.subtotal)}</td></tr>${x.discount > 0 ? `<tr><td>Discount</td><td>- ${money(x.discount)}</td></tr>` : ''}${tx ? `<tr><td>${lab}</td><td>${money(x.tax)}</td></tr>` : ''}<tr class="b"><td>${grandLabel} (${esc(s)})</td><td>${money(x.grand)}</td></tr></table>`;
+    const block = (title, x, grandLabel) => `<table class="q-tot">${title ? `<caption>${title}</caption>` : ''}${x.discount > 0 || tx ? `<tr><td>Subtotal</td><td>${money(x.subtotal)}</td></tr>` : ''}${x.discount > 0 ? `<tr><td>Discount</td><td>- ${money(x.discount)}</td></tr>` : ''}${tx ? `<tr><td>${lab}</td><td>${money(x.tax)}</td></tr>` : ''}<tr class="b"><td>${grandLabel} (${esc(s)})</td><td>${money(x.grand)}</td></tr></table>`;
     return T.rent ? block('One-time setup', T.setup, 'Total one-time setup') + block('Monthly rental', T.month, 'Rental per month') : block('', T.sum, 'Total');
   }
   const profText = (l, s) => (l.profit == null ? (l.on ? 'no cost yet' : '') : `profit ${s} ${money(l.profit)} · ${(Math.round(l.marginPct * 10) / 10).toFixed(1)}% margin`);
@@ -347,7 +348,7 @@
     const excl = Q.excl != null ? Q.excl : exclDefault(rent);
     const exclHtml = E ? `<ol class="q-exl">${excl.map((x, i) => `<li data-ex="${i}">${ed('ex', x, 'Type an exclusion', { ml: 1, label: 'Exclusion ' + (i + 1) })}<button type="button" class="x" data-act="exdel" title="Remove" aria-label="Remove exclusion ${i + 1}">×</button></li>`).join('')}</ol><button type="button" class="btn quiet sm" data-act="exadd">+ Add an exclusion</button>`
       : (excl.length ? `<ol>${excl.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '');
-    const bi = Q.bankInfo || {}, bankFilled = bi.bank || bi.name || bi.no;
+    const bi = Q.bankInfo || {}, bankFilled = bi.bank || bi.no;   // the account name alone is not a bank detail
     const bankHtml = E ? `<section class="q-block q-bank"><h3>Bank details</h3><div class="q-bk"><div><small>Bank</small>${ed('bank.bank', bi.bank, 'Bank name', { label: 'Bank name' })}</div><div><small>Account name</small>${ed('bank.name', bi.name, 'Account name', { label: 'Account name' })}</div><div><small>Account no.</small>${ed('bank.no', bi.no, 'Account number', { label: 'Account number' })}</div></div>${Q.tbc.bank && !(bi.bank && bi.no) ? '<span class="tbc">to confirm</span>' : ''}</section>`
       : (bankFilled ? `<section class="q-block q-bank"><h3>Bank details</h3><div class="q-bk"><div><small>Bank</small><span>${esc(bi.bank)}</span></div><div><small>Account name</small><span>${esc(bi.name)}</span></div><div><small>Account no.</small><span>${esc(bi.no)}</span></div></div></section>` : '');
     const service = rent && Q.service ? `<section class="q-block q-service"><h3>AMR maintenance and service</h3><p>Service frequency: ${num(Q.perYear, 4)} times a year${num(Q.perYear, 4) === 4 ? ' (every quarter)' : ''}. Total service: ${qty} AMR${qty > 1 ? 's' : ''}.</p>
@@ -494,11 +495,12 @@
   }
   // what you can add: blank, the AMR models, and the standard items (a blank price is shown as to confirm, never invented)
   function catalogItems(S, D, Q) {
+    const site = v => (((DB.quote || {}).prefill) ? num(v) : 0);
     const st = (DB.quote || {}).setup || {}, L = [{ name: 'New item', sub: '', specs: '', uom: 'unit', base: 0 }];
     (DB.models || []).forEach(m => L.push({ name: 'AMR hardware', sub: m.name, specs: SPEC.amr.join('\n'), uom: 'unit', base: m.unitPrice, cost: true }));
-    L.push({ name: 'Robot Control System (RCS)', specs: SPEC.rcs.join('\n'), uom: 'LOT', base: num(st.rcs) }, { name: 'Installation and commissioning', specs: SPEC.install.join('\n'), uom: 'LOT', base: num(st.install), taxable: false },
-      { name: 'Automatic shuttle door integration and interlocking', specs: SPEC.door.join('\n'), uom: 'door', base: num(st.door) }, { name: 'Wireless call box and station push-button system', specs: SPEC.callbox.join('\n'), uom: 'LOT', base: num(st.callbox) },
-      { name: 'WiFi infrastructure setup', specs: SPEC.wifi.join('\n'), uom: 'LOT', base: num(st.wifi), optional: true }, { name: 'Server and monitoring station', specs: SPEC.server.join('\n'), uom: 'LOT', base: num(st.server), optional: true },
+    L.push({ name: 'Robot Control System (RCS)', specs: SPEC.rcs.join('\n'), uom: 'LOT', base: num(st.rcs) }, { name: 'Installation and commissioning', specs: SPEC.install.join('\n'), uom: 'LOT', base: site(st.install), taxable: false },
+      { name: 'Automatic shuttle door integration and interlocking', specs: SPEC.door.join('\n'), uom: 'door', base: site(st.door) }, { name: 'Wireless call box and station push-button system', specs: SPEC.callbox.join('\n'), uom: 'LOT', base: site(st.callbox) },
+      { name: 'WiFi infrastructure setup', specs: SPEC.wifi.join('\n'), uom: 'LOT', base: site(st.wifi), optional: true }, { name: 'Server and monitoring station', specs: SPEC.server.join('\n'), uom: 'LOT', base: site(st.server), optional: true },
       { name: 'Charging station', specs: '', uom: 'unit', base: 0 }, { name: 'Operator training', specs: '', uom: 'LOT', base: 0 }, { name: 'Maintenance and service contract', specs: '', uom: 'year', base: 0 }, { name: 'Spare battery', specs: '', uom: 'unit', base: 0 });
     return L;
   }
@@ -525,7 +527,7 @@
   function estHtml() {
     const E = estimate(S0, D0), Q = ensure(S0, D0), tx = num(Q.taxPct), s = sym(Q), row = (k, a, b) => `<button type="button" class="qe-row${Q.type === k ? ' on' : ''}" data-est="${k}"><span>${a}</span><b>${b}</b></button>`;
     return `<small>Estimated quotation <em>from your proposal</em></small>${row('buy', 'To buy', s + ' ' + money(E.buy.sum.grand))}${row('rent', 'To rent', s + ' ' + money(E.rent.setup.grand) + ' setup + ' + s + ' ' + money(E.rent.month.grand) + ' a month')}
-      <p>${esc(E.basis)}. Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.</p>${E.buy.hasCost ? `<p class="qe-cost${E.buy.sell > E.buy.cost + 0.005 ? '' : ' warn'}">${E.buy.sell > E.buy.cost + 0.005 ? `AMR and RCS: cost ${s} ${money(E.buy.cost)}, sold at ${s} ${money(E.buy.sell)}, a margin of ${E.buy.marginPct.toFixed(1)}% (only you see this).` : 'The AMR and RCS are at cost price: set a markup under Pricing.'}</p>` : ''}`;
+      <p>${esc(E.basis)}. ${(DB.quote || {}).prefill ? `Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.` : 'The AMR and RCS are from the selector tool prices (with your markup). Customisation, delivery, installation and the site items differ every time, so they are blank for you to fill in and are not in this estimate yet.'}</p>${E.buy.hasCost ? `<p class="qe-cost${E.buy.sell > E.buy.cost + 0.005 ? '' : ' warn'}">${E.buy.sell > E.buy.cost + 0.005 ? `AMR and RCS: cost ${s} ${money(E.buy.cost)}, sold at ${s} ${money(E.buy.sell)}, a margin of ${E.buy.marginPct.toFixed(1)}% (only you see this).` : 'The AMR and RCS are at cost price: set a markup under Pricing.'}</p>` : ''}`;
   }
   function barHtml(R) {
     const T = R.totals, s = sym(R.Q), st = (l, v, cls) => `<div class="qb-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`, tx = num(R.Q.taxPct);
