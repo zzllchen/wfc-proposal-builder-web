@@ -360,8 +360,6 @@
 .q-trm .x, .q-exl .x { opacity: 0; }
 .q-trm:hover .x, .q-trm:focus-within .x, .q-exl li:hover .x, .q-exl li:focus-within .x { opacity: 1; }
 @media (hover: none) { .q-trm .x, .q-exl .x { opacity: 1; } }
-@container quote (min-width: 1280px) { .qpaper { zoom: 1.2; } }
-@container quote (min-width: 1640px) { .qpaper { zoom: 1.35; } }
 .qdoc.edit .q-meta td { padding-top: 0; padding-bottom: 0; }
 .qdoc.edit .q-meta td:last-child { white-space: nowrap; }
 .qdoc.edit .q-meta .cell { min-height: 22px; padding: 0 4px; }
@@ -395,3 +393,20 @@
 .qdoc.edit .q-trm .x, .qdoc.edit .q-exl .x { width: 16px; height: 16px; font-size: 14px; line-height: 1; padding: 0; }
 .qdoc.edit .q-trm { grid-template-columns: 112px minmax(0, 1fr) 16px; }
 .qdoc.edit .q-exl li { grid-template-columns: minmax(0, 1fr) 16px; gap: 6px; }
+
+/* a laptop screen: everything on one toolbar row, a calmer header block, less empty space above and below the page */
+@container quote (max-width: 1600px) { #qSync .lbl, #qSet .lbl { display: none; } #qSync, #qSet { min-width: 36px; padding: 0; } }
+@media (min-height: 940px) { @container quote (min-width: 1280px) { .qpaper { zoom: 1.2; } } }
+@media (min-height: 1040px) { @container quote (min-width: 1640px) { .qpaper { zoom: 1.35; } } }
+.qpaperwrap { padding: 12px 20px 40px; }
+.qdoc.edit { padding: 20px 36px 30px; }
+.qtotal { padding: 8px 20px; }
+.qb-s small { font-size: 11px; }
+.qb-s b { font-size: 15px; }
+.qdoc.edit .q-meta { display: grid; grid-template-columns: auto auto auto auto; column-gap: 6px; row-gap: 0; }
+.qdoc.edit .q-meta tbody, .qdoc.edit .q-meta tr { display: contents; }
+.qdoc.edit .q-meta td { padding: 0 6px 0 0; }
+.qdoc.edit .q-meta td:last-child { padding-right: 18px; }
+.qdoc.edit .q-meta td:last-child .q-until { display: block; margin: 0; }
+@container paper (max-width: 700px) { .qdoc.edit .q-meta { grid-template-columns: auto 1fr; } .qdoc.edit .q-meta td:last-child { padding-right: 0; } }
+@media (min-width: 901px) { body[data-tab="quote"] #app { grid-template-rows: 64px 0px minmax(0, 1fr); } body[data-tab="quote"] #docs { display: none; } }
