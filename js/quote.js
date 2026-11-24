@@ -587,7 +587,7 @@
     const ss = $('#qStat'); if (ss && ss.value !== Q.status) ss.value = Q.status;
     $$('#qType .tab').forEach(b => b.classList.toggle('active', b.dataset.v === Q.type));
     const u = $('#qUndo'), r = $('#qRedo'); if (u) u.disabled = !hist.length; if (r) r.disabled = !redo.length;
-    paintBanner(Q);
+    paintBanner(Q); applyZoom();
     if ($('#quote').dataset.qm === 'preview' && sheet) { sheet.innerHTML = previewRev ? revDoc(S0, D0, previewRev) : docHtml(S0, D0); fit(); paintPrevBar(Q); }
   }
   /* ---------- revisions and the register on the screen ---------- */
@@ -732,7 +732,29 @@
   }
   function fit() {
     const box = $('#qPrev'), sheet = $('#qSheet'); if (!box || !sheet || !box.clientWidth) return;
+    if (zoomOn()) { sheet.style.setProperty('--qs', String(zmode)); return; }   // you set a zoom: the preview follows it
     const w = box.clientWidth - (box.clientWidth < 600 ? 16 : 40); if (w > 100) sheet.style.setProperty('--qs', Math.min(1.25, w / 794).toFixed(3));
+  }
+  /* ---------- zoom (like a PDF viewer): the + and - buttons, Ctrl + mouse wheel or a trackpad pinch, Fit, and the % to go back; remembered on this PC ---------- */
+  const ZK = 'wfc-quote-zoom', ZMIN = 0.5, ZMAX = 2.5;
+  let zmode = (() => { const n = parseFloat(lsGet(ZK)); return Number.isFinite(n) && n >= ZMIN && n <= ZMAX ? n : 'auto'; })();   // 'auto': the page as it fits
+  const zoomOn = () => zmode !== 'auto' && !!$('#quote') && $('#quote').clientWidth >= 900;   // on a phone or a narrow window the page keeps fitting itself
+  const inPreview = () => $('#quote').dataset.qm === 'preview';
+  function effZoom() { if (inPreview()) { const v = parseFloat($('#qSheet').style.getPropertyValue('--qs')); return Number.isFinite(v) ? v : 1; } return zoomOn() ? zmode : 1; }
+  function applyZoom() {
+    const q = $('#quote'); if (!q) return; const paper = $('#qPaper'), on = zoomOn();
+    if (paper) { paper.style.zoom = on && !inPreview() ? String(zmode) : ''; paper.classList.toggle('qz', on); }
+    fit();
+    const v = $('#qZoom .qz-v'); if (v) v.textContent = Math.round(effZoom() * 100) + '%';
+  }
+  function setZoom(v) {   // v: a number, 'auto' or 'fit'
+    const box = inPreview() ? $('#qPrev') : $('#qMain'); if (!box) return;
+    const ratio = box.scrollHeight ? (box.scrollTop + box.clientHeight / 2) / box.scrollHeight : 0;
+    const exact = v === 'fit', k = exact ? 100 : 20;   // the buttons and the wheel move in steps of 5%; Fit is exact
+    if (exact) v = (box.clientWidth - 40) / (inPreview() ? 794 : 1000);
+    zmode = v === 'auto' ? 'auto' : Math.round(Math.min(ZMAX, Math.max(ZMIN, v)) * k) / k;
+    lsSet(ZK, String(zmode)); applyZoom();
+    if (box.scrollHeight) box.scrollTop = Math.max(0, ratio * box.scrollHeight - box.clientHeight / 2);   // keep the same spot in view
   }
   function toast(msg) { let t = $('#qToast'); if (!t) { t = document.createElement('div'); t.id = 'qToast'; t.setAttribute('role', 'status'); $('#quote').appendChild(t); } t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 3200); }
 
@@ -904,7 +926,10 @@
       else if (t.closest('[data-back]')) { previewRev = null; $('#quote').dataset.qm = 'edit'; $$('#qMode .tab').forEach(x => x.classList.toggle('active', x.dataset.qm === 'edit')); refresh(false); }
     });
     const mode = $('#qMode'); if (mode) mode.addEventListener('click', e => { const b = e.target.closest('[data-qm]'); if (!b) return; previewRev = null; qz.dataset.qm = b.dataset.qm; mode.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === b)); refresh(false); fit(); setTimeout(fit, 60); });
-    if (window.ResizeObserver && $('#qPrev')) new ResizeObserver(fit).observe($('#qPrev'));
+    if (window.ResizeObserver) { if ($('#qPrev')) new ResizeObserver(applyZoom).observe($('#qPrev')); new ResizeObserver(applyZoom).observe(qz); }
+    const zb = $('#qZoom'); if (zb) zb.addEventListener('click', e => { const b = e.target.closest('[data-z]'); if (!b) return; const k = b.dataset.z, cur = effZoom(); if (k === 'in') setZoom(cur + 0.1); else if (k === 'out') setZoom(cur - 0.1); else if (k === 'fit') setZoom('fit'); else setZoom('auto'); });
+    const wheel = e => { if (!(e.ctrlKey || e.metaKey)) return; e.preventDefault(); setZoom(effZoom() * (e.deltaY < 0 ? 1.08 : 1 / 1.08)); };
+    ['#qMain', '#qPrev'].forEach(id => { const el = $(id); if (el) el.addEventListener('wheel', wheel, { passive: false }); });
   }
   function update(S, D) {
     if (S !== lastS) { hist = []; redo = []; lastKey = ''; lastS = S; }
