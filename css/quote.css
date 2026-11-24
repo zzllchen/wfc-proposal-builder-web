@@ -1,31 +1,33 @@
 /* WFC Proposal Builder: the Quotation tab and the quotation page itself.
    The tab: a top bar, the A4 page you edit in place (left), the checks and settings (right), and a bar with the figures at the bottom.
    The page (.qdoc) is one template: with .edit it is the editable page, without it it is exactly what Save PDF prints. */
-#quote { container: quote / inline-size; position: relative; flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+#quote { container: quote / inline-size; position: relative; flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; overflow: hidden; }
 #quote[hidden] { display: none; }
-.qbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; min-height: 40px; padding: 0 2px; }
-.qbar h2 { margin: 0; font-size: 18px; letter-spacing: -.2px; color: #0B1220; }
+.qbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; padding: 0 2px; }
 .qbar .sp { flex: 1; }
 .qno { font-size: 13px; font-weight: 600; color: #5B6577; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .qstat { height: 30px; appearance: none; -webkit-appearance: none; border: 1px solid var(--field); border-radius: 99px; padding: 0 28px 0 12px; font: inherit; font-size: 12.5px; font-weight: 700; color: #0B1220; background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238793A8' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center; cursor: pointer; }
-.qchip { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 11px; border-radius: 99px; font-size: 12px; font-weight: 700; background: #FFF1C9; color: #8A5A00; white-space: nowrap; }
+.qchip { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border: 0; border-radius: 99px; font: inherit; font-size: 12px; font-weight: 700; background: #FFF1C9; color: #8A5A00; white-space: nowrap; cursor: pointer; }
 .qchip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .qchip.ok { background: #E3F5EA; color: #11713F; }
 .qbar .btn.qi { min-width: var(--tap); padding: 0; }
 .qbar .btn:disabled { opacity: .35; cursor: default; }
-.qmode .tab { min-height: 0; }
-.qmode .only-narrow { display: none; }
-.qbody { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; }
+.qmode .tab, .qtype .tab { min-height: 0; }
+.qbody { min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); }
 .qmain { min-height: 0; min-width: 0; overflow: auto; background: #EEF1F7; border-radius: var(--r-lg); }
-.qrail { min-height: 0; min-width: 0; overflow-y: auto; padding: 2px 4px 8px 2px; scrollbar-width: thin; }
 .qprev { display: none; min-height: 0; overflow: auto; background: #EEF1F7; border-radius: var(--r-lg); min-width: 0; }
 .qsheetwrap { display: flex; justify-content: center; padding: 20px; }
 .qsheet { --qs: 1; zoom: var(--qs); width: 794px; flex: none; background: #fff; box-shadow: 0 10px 40px rgba(11,18,32,.14); border-radius: 4px; }
-.qpaperwrap { display: flex; justify-content: center; padding: 24px 20px 56px; }
-.qpaper { container: paper / inline-size; width: 794px; max-width: 100%; background: #fff; box-shadow: 0 10px 40px rgba(11,18,32,.14); border-radius: 4px; }
-#quote[data-qm="preview"] .qbody { grid-template-columns: minmax(0, 1fr); }
-#quote[data-qm="preview"] .qmain, #quote[data-qm="preview"] .qrail { display: none; }
+.qpaperwrap { display: flex; justify-content: center; padding: 20px 20px 56px; }
+.qpaper { container: paper / inline-size; width: 1000px; max-width: 100%; background: #fff; box-shadow: 0 10px 40px rgba(11,18,32,.14); border-radius: 4px; }
+#quote[data-qm="preview"] .qmain { display: none; }
 #quote[data-qm="preview"] .qprev { display: block; }
+/* Settings: a drawer over the page, so the page itself gets the whole width */
+.qrail { position: absolute; top: 0; right: 0; bottom: 0; z-index: 35; width: min(400px, 100%); padding: 14px 14px 24px; overflow-y: auto; background: #F4F6FB; box-shadow: -14px 0 40px rgba(11,18,32,.2); border-radius: var(--r-lg) 0 0 var(--r-lg); transform: translateX(104%); visibility: hidden; transition: transform .2s ease, visibility 0s linear .2s; scrollbar-width: thin; }
+#quote.qdrawer .qrail { transform: none; visibility: visible; transition: transform .2s ease; }
+.qscrim { position: absolute; inset: 0; z-index: 34; background: rgba(11,18,32,.28); opacity: 0; pointer-events: none; transition: opacity .2s; }
+#quote.qdrawer .qscrim { opacity: 1; pointer-events: auto; }
+.qd-h { display: flex; align-items: center; justify-content: space-between; margin: 0 2px 12px; font-size: 16px; font-weight: 700; color: #0B1220; }
 .qtotal { display: flex; align-items: center; gap: 12px 36px; flex-wrap: wrap; background: #fff; border-radius: 16px; padding: 12px 20px; box-shadow: 0 6px 22px rgba(11,18,32,.07), 0 1px 2px rgba(11,18,32,.05); }
 .qb-s small { display: block; font-size: 11.5px; color: #5B6577; line-height: 1.3; }
 .qb-s b { font-size: 17px; line-height: 1.3; color: #0B1220; font-variant-numeric: tabular-nums; }
@@ -36,17 +38,6 @@
 .lnk { border: 0; background: none; padding: 0; font: inherit; font-size: 12px; font-weight: 600; color: #2F5BD0; text-decoration: underline; cursor: pointer; }
 .tbc { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; background: #FFF1C9; color: #8A5A00; padding: 1px 8px; border-radius: 99px; vertical-align: 1px; }
 
-/* the side panel: out-of-date notice, estimate, checks, settings */
-.qstale { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; background: #EAF1FF; border: 1px solid #C9D8F8; border-radius: 14px; padding: 12px 14px; font-size: 13px; line-height: 1.45; color: #1E3A8A; margin-bottom: 12px; }
-.qest { background: linear-gradient(180deg, #F4F7FE, #EAF0FC); border: 1px solid #D9E4FA; border-radius: 16px; padding: 14px 14px 12px; margin-bottom: 12px; }
-.qest small { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: #2F5BD0; padding: 0 4px; }
-.qest small em { font-style: normal; font-weight: 500; letter-spacing: 0; text-transform: none; color: #5B6577; margin-left: 6px; }
-.qe-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; margin-top: 8px; padding: 9px 12px; border: 1px solid transparent; border-radius: 12px; background: transparent; font: inherit; font-size: 13px; text-align: left; color: #3A4766; cursor: pointer; }
-.qe-row:hover { background: rgba(255,255,255,.6); }
-.qe-row b { color: #0B1220; font-size: 15px; font-variant-numeric: tabular-nums; text-align: left; }
-.qe-row.on { background: #fff; border-color: #C9D8F8; box-shadow: 0 2px 8px rgba(47,91,208,.10); }
-.qe-row.on b { color: #2F5BD0; font-size: 17px; }
-.qest p { margin: 10px 4px 0; font-size: 12px; color: #5B6577; line-height: 1.5; }
 .qcheck { background: #FFF8E1; border: 1px solid #F3E4A6; border-radius: 14px; padding: 12px 14px; font-size: 13px; color: #6B4A00; line-height: 1.45; margin-bottom: 12px; }
 .qcheck summary { cursor: pointer; list-style: none; } .qcheck summary::-webkit-details-marker { display: none; }
 .qcheck summary::before { content: "▸ "; } .qcheck[open] summary::before { content: "▾ "; }
@@ -71,7 +62,6 @@
 .qgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 0 12px; }
 .qnote { margin: 10px 0 0; font-size: 12.5px; color: #5B6577; line-height: 1.5; }
 .qsave { margin-top: 12px; }
-.qhint { font-size: 12px; color: #8793A8; margin: 4px 6px 12px; line-height: 1.5; }
 .inp { display: flex; align-items: center; height: 40px; border: 1px solid var(--field); border-radius: 10px; background: #fff; overflow: hidden; }
 .inp:focus-within { border-color: #2F5BD0; box-shadow: 0 0 0 3px rgba(47,91,208,.15); }
 .inp i { flex: none; align-self: stretch; display: flex; align-items: center; padding: 0 10px; font-style: normal; font-size: 12px; font-weight: 600; color: #8793A8; background: #F6F8FC; border-right: 1px solid #E6EAF2; }
@@ -79,7 +69,6 @@
 .inp input { flex: 1; min-width: 0; height: 100% !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; outline: 0; padding: 0 10px !important; text-align: right; font-size: 14px; background: transparent !important; font-variant-numeric: tabular-nums; }
 .inp input.bad { background: #FFF8E1 !important; }
 .qtog { display: flex; gap: 12px; align-items: flex-start; margin-top: 14px; font-size: 13.5px; color: #0B1220; cursor: pointer; line-height: 1.4; }
-.qtog small { display: block; color: #8793A8; font-size: 12px; }
 .sw { position: relative; flex: none; width: 36px; height: 22px; display: inline-block; }
 .sw input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; z-index: 1; }
 .sw i { position: absolute; inset: 0; background: #D5DBE8; border-radius: 99px; transition: background .15s; }
@@ -122,23 +111,12 @@
 #qToast { position: absolute; left: 50%; bottom: 84px; transform: translate(-50%, 12px); background: #0B1220; color: #fff; padding: 10px 18px; border-radius: 99px; font-size: 13px; max-width: 90%; text-align: center; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 40; }
 #qToast.on { opacity: 1; transform: translate(-50%, 0); }
 
-/* narrower than a laptop: the panel goes to its own Settings tab */
-@container quote (max-width: 1099px) {
-  .qbody { grid-template-columns: minmax(0, 1fr); }
-  .qrail { display: none; }
-  #quote[data-qm="settings"] .qmain { display: none; }
-  #quote[data-qm="settings"] .qrail { display: block; }
-  .qmode .only-narrow { display: inline-flex; }
-  .qpaperwrap { padding: 16px 12px 48px; }
-  .qsheetwrap { padding: 12px 8px; }
-}
-@container quote (max-width: 820px) { #qSync .lbl { display: none; } #qSync { min-width: 36px; padding: 0; } }
+/* narrower screens */
+@container quote (max-width: 900px) { #qSync .lbl, #qSet .lbl { display: none; } #qSync, #qSet { min-width: 36px; padding: 0; } .qpaperwrap { padding: 14px 12px 48px; } .qsheetwrap { padding: 12px 8px; } }
 #qGen .ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-@container quote (max-width: 600px) {
-  .qbar h2 { display: none; }
-  .qbar .btn.qi, #qSync { min-width: 36px; min-height: 36px; padding: 0; }
-  .qmode { width: 100%; order: 9; }
-  .qmode .tab { flex: 1; }
+@container quote (max-width: 640px) {
+  .qbar .btn.qi, #qSync, #qSet { min-width: 36px; min-height: 36px; padding: 0; }
+  .qmode { width: 100%; order: -1; } .qmode .tab { flex: 1; }
   .qpaperwrap { padding: 8px 6px 40px; }
   .qtotal { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); padding: 10px 14px; gap: 8px 12px; }
   .qb-s small { font-size: 10.5px; }
@@ -151,7 +129,7 @@
 /* ---------- the Costing view (internal) ---------- */
 .qcost { display: none; container: qc / inline-size; min-height: 0; min-width: 0; overflow: auto; padding: 2px 4px 24px 2px; scrollbar-width: thin; }
 #quote[data-qm="cost"] .qbody { grid-template-columns: minmax(0, 1fr); }
-#quote[data-qm="cost"] .qmain, #quote[data-qm="cost"] .qrail, #quote[data-qm="cost"] .qprev { display: none; }
+#quote[data-qm="cost"] .qmain, #quote[data-qm="cost"] .qprev { display: none; }
 #quote[data-qm="cost"] .qcost { display: grid; grid-template-columns: minmax(0, 1fr) 340px; grid-template-areas: "note note" "table side"; gap: 14px 16px; align-content: start; }
 .qc-note { grid-area: note; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: 14px; background: #0B1220; color: #E9EEF8; font-size: 13px; line-height: 1.45; }
 .qc-note svg { flex: none; color: #F2C14E; }
@@ -230,7 +208,6 @@
 .q-to small { display: block; font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #204CBA; font-weight: 700; margin-bottom: 2px; }
 .q-to b { display: block; font-size: 13px; }
 .q-to p { margin: 2px 0; color: #3A4766; }
-.q-intro { margin: 8px 0 10px; }
 .q-table { width: 100%; border-collapse: collapse; }
 .q-table thead { display: table-header-group; }
 .q-table th { background: #F2F6FD; color: #204CBA; font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase; text-align: left; padding: 7px 8px; font-weight: 700; }
@@ -295,8 +272,6 @@
 .qdoc.edit .inpx i { font-style: normal; color: #8793A8; font-size: 10px; padding-right: 4px; }
 .qdoc.edit .q-until { display: block; margin: 1px 0 0 3px; }
 .qdoc.edit .q-table { table-layout: fixed; }
-.qdoc.edit .q-table th:nth-child(1) { width: 52px; } .qdoc.edit .q-table th:nth-child(3) { width: 54px; } .qdoc.edit .q-table th:nth-child(4) { width: 64px; } .qdoc.edit .q-table th:nth-child(5) { width: 92px; }
-.qdoc.edit .q-table th:nth-child(6) { width: 54px; } .qdoc.edit .q-table th:nth-child(7) { width: 92px; } .qdoc.edit .q-table th.act { width: 34px; }
 .qdoc.edit .q-table td.c { white-space: normal; }
 .qdoc.edit .q-table td.act { padding-left: 2px; padding-right: 2px; }
 .qdoc.edit .q-table td { padding: 8px 4px; }
@@ -308,10 +283,6 @@
 .qdoc.edit .q-table td.c .cell { text-align: center; }
 .qdoc.edit .q-table td.c .ed { display: block; text-align: center; margin: 0; }
 .qdoc.edit .q-am b { display: inline-block; padding: 3px 0; }
-.q-int { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; margin-top: 8px; padding: 6px 8px; background: #F6F8FC; border-radius: 8px; font-size: 10.5px; color: #5B6577; }
-.q-int label { display: flex; gap: 6px; align-items: center; }
-.q-int .inpx { border: 1px solid #D5DBE8; border-radius: 6px; background: #fff; }
-.q-int .cell { width: 76px; }
 .q-add { margin: 10px 0 0; }
 .addmenu, .rmenu { position: relative; }
 .addmenu > summary { display: inline-flex; }
@@ -328,10 +299,6 @@
 .rmenu-b button:hover { background: #F2F6FD; }
 .rmenu-b .dg { color: #B42318; }
 .q-terms-e { display: flex; flex-direction: column; }
-.q-trm { display: grid; grid-template-columns: 34px 130px minmax(0, 1fr) 24px; gap: 4px 12px; align-items: start; padding: 6px 0; border-bottom: 1px solid #EEF1F6; }
-.q-trm.off .tk, .q-trm.off .tv { opacity: .4; }
-.q-trm .tk { color: #5B6577; }
-.q-trm .auto { display: block; color: #8793A8; font-size: 10px; }
 .x { width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: #8793A8; font-size: 18px; line-height: 1; cursor: pointer; }
 .x:hover { background: #FDECEA; color: #B42318; }
 .q-exl li { display: grid; grid-template-columns: minmax(0, 1fr) 24px; gap: 8px; align-items: start; }
@@ -370,9 +337,32 @@
   .qdoc.edit .q-sp .ed { font-size: 12px; }
   .qdoc.edit .q-tot { min-width: 0; width: 100%; }
   .qdoc.edit .q-stats { grid-template-columns: 1fr; gap: 8px; }
-  .qdoc.edit .q-trm { grid-template-columns: 34px minmax(0, 1fr) 24px; }
-  .qdoc.edit .q-trm .tv { grid-column: 1 / -1; }
+  .qdoc.edit .q-trm { grid-template-columns: minmax(0, 1fr) 24px; }
+  .qdoc.edit .q-trm .tk { grid-column: 1; } .qdoc.edit .q-trm .x { grid-column: 2; grid-row: 1; } .qdoc.edit .q-trm .tv { grid-column: 1 / -1; grid-row: 2; }
   .qdoc.edit .q-bk { grid-template-columns: 1fr; }
   .qdoc.edit .q-sign.two { grid-template-columns: 1fr; gap: 8px; }
   .qdoc.edit .q-terms, .qdoc.edit .q-service dl { grid-template-columns: 1fr; }
 }
+
+/* the editing page: roomier, and quiet until you point at something */
+.qdoc.edit { padding: 30px 40px 40px; }
+.qdoc.edit .q-table th.c-n { width: 52px; } .qdoc.edit .q-table th.c-q { width: 68px; } .qdoc.edit .q-table th.c-u { width: 84px; } .qdoc.edit .q-table th.c-p { width: 124px; } .qdoc.edit .q-table th.c-d { width: 70px; } .qdoc.edit .q-table th.c-a { width: 124px; } .qdoc.edit .q-table th.act { width: 34px; }
+.qdoc.edit .q-sb:empty, .qdoc.edit .q-sp .ed:empty { display: block; height: 0; margin: 0; overflow: hidden; }
+.qdoc.edit .q-row:hover .q-sb:empty, .qdoc.edit .q-sb:empty:focus, .qdoc.edit .q-row:hover .q-sp .ed:empty, .qdoc.edit .q-sp .ed:empty:focus { height: 1.5em; }
+.qdoc.edit .q-sp .ed:not(:focus):not(:empty) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.q-int { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; margin-top: 6px; font-size: 10.5px; color: #5B6577; }
+.q-int label { display: flex; gap: 6px; align-items: center; }
+.q-int .inpx { border: 1px solid #D5DBE8; border-radius: 6px; background: #fff; }
+.q-int .cell { width: 84px; min-height: 26px; }
+.q-prof { font-weight: 600; color: #11713F; }
+.q-trm { display: grid; grid-template-columns: 150px minmax(0, 1fr) 24px; gap: 4px 14px; align-items: start; padding: 3px 0; }
+.q-trm .tk { color: #5B6577; }
+.q-trm .x, .q-exl .x { opacity: 0; }
+.q-trm:hover .x, .q-trm:focus-within .x, .q-exl li:hover .x, .q-exl li:focus-within .x { opacity: 1; }
+@media (hover: none) { .q-trm .x, .q-exl .x { opacity: 1; } }
+@container quote (min-width: 1280px) { .qpaper { zoom: 1.2; } }
+@container quote (min-width: 1640px) { .qpaper { zoom: 1.35; } }
+.qdoc.edit .q-meta td { padding-top: 0; padding-bottom: 0; }
+.qdoc.edit .q-meta td:last-child { white-space: nowrap; }
+.qdoc.edit .q-meta .cell { min-height: 22px; padding: 0 4px; }
+.qdoc.edit .q-until { display: inline; margin: 0 0 0 6px; }

@@ -91,7 +91,7 @@
     const Q = S.quote || (S.quote = {});
     const legacy = Q.v !== 2 ? { period: Q.period, delivery: Q.delivery, payment: Q.payment, warranty: Q.warranty, bank: Q.bank, exclusions: Q.exclusions, lines: Q.lines } : null;
     const d = { type: 'rent', termYears: 5, no: '', rev: 1, status: 'draft', date: '', validityDays: 30, currency: 'MYR', taxPct: num(DB.defaults && DB.defaults.taxPct, 0), taxLabel: 'SST', markup: defaultMarkup(), disc: { mode: 'pct', v: 0 },
-      head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: true, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
+      head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: false, showDisc: false, noteOpen: false, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
     Q.v = 2;
     if (!Q.date) Q.date = (S.client && /^\d{4}-\d{2}-\d{2}/.test(S.client.date || '') && S.client.date.slice(0, 10)) || today();
@@ -314,7 +314,7 @@
     // a text field: in the editor you type on the page itself, in the PDF it is plain text
     const ed = (path, val, ph, o) => { o = o || {}; return E ? `<span class="ed${o.ml ? ' ml' : ''}${o.cls ? ' ' + o.cls : ''}" contenteditable="${CE}" spellcheck="false" role="textbox" data-f="${esc(path)}" data-ph="${esc(ph || '')}" aria-label="${esc(o.label || ph || path)}"${o.ml ? ' aria-multiline="true"' : ''}>${esc(val)}</span>`
       : (String(val || '').trim() ? `<span${o.ml ? ' class="ml"' : ''}>${esc(val)}</span>` : (o.print || '')); };
-    const showRows = R.lines.filter(l => E || l.on || l.optional), showDisc = E || R.lines.some(l => l.on && l.disc > 0);
+    const showRows = R.lines.filter(l => E || l.on || l.optional), anyDisc = R.lines.some(l => l.on && l.disc > 0), showDisc = E ? !!(Q.showDisc || anyDisc) : anyDisc;
     let n = 0;
     const rows = showRows.map(l => {
       const vis = l.on || l.optional, no = vis ? ++n : '–', off = !l.on, bad = l.on && !(l.unit > 0);
@@ -324,12 +324,12 @@
       const rk = (k, v, ph, cls, lab) => `<input class="cell ${cls || ''}" inputmode="decimal" autocomplete="off" data-rk="${k}" value="${esc(v)}" placeholder="${ph || ''}" aria-label="${lab}">`;
       return `<tr class="q-row${off ? ' q-off' : ''}" data-row="${esc(l.id)}">
         <td class="n"><span class="rn">${no}</span><label class="sw sm" title="Include this item in the quotation"><input type="checkbox" data-rk="on" ${l.on ? 'checked' : ''} aria-label="Include ${esc(l.name)}"><i></i></label></td>
-        <td class="d">${ed('row.name', l.name, 'Item name', { cls: 'q-nm', label: 'Item name' })}${l.optional ? '<em class="q-opt">Optional</em>' : ''}${l.est ? '<em class="q-opt">Estimated</em>' : ''}<br>${ed('row.sub', l.sub, 'Description (for example the model)', { cls: 'q-sb', label: 'Description' })}<div class="q-sp">${ed('row.specs', l.specs, 'Specifications, one per line', { ml: 1, label: 'Specifications' })}</div>
-          ${Q.internal ? `<div class="q-int"><label>Our cost<span class="inpx">${rk('cost', l.cost && l.base ? money(l.base) : '', 'add cost', 'num', 'Our cost')}</span></label><label>Markup<span class="inpx"><input class="cell num" inputmode="decimal" autocomplete="off" data-rk="pct" value="${l.cost && l.pct ? +l.pct.toFixed(2) : ''}" placeholder="${l.cost ? '0' : ''}" aria-label="Markup percent"${l.cost ? '' : ' disabled'}><i>%</i></span></label><span class="q-prof" data-prof>${profText(l, s)}</span><small>only you see this</small></div>` : ''}</td>
+        <td class="d">${ed('row.name', l.name, 'Item name', { cls: 'q-nm', label: 'Item name' })}${l.optional ? '<em class="q-opt">Optional</em>' : ''}${l.est ? '<em class="q-opt">Estimated</em>' : ''}<br>${ed('row.sub', l.sub, 'Add a description', { cls: 'q-sb', label: 'Description' })}<div class="q-sp">${ed('row.specs', l.specs, 'Add specifications', { ml: 1, label: 'Specifications' })}</div>
+          ${Q.internal ? `<div class="q-int"><label>Cost<span class="inpx">${rk('cost', l.cost && l.base ? money(l.base) : '', '', 'num', 'Our cost')}</span></label><label>Markup<span class="inpx"><input class="cell num" inputmode="decimal" autocomplete="off" data-rk="pct" value="${l.cost && l.pct ? +l.pct.toFixed(2) : ''}" aria-label="Markup percent"${l.cost ? '' : ' disabled'}><i>%</i></span></label><span class="q-prof" data-prof>${profText(l, s)}</span></div>` : ''}</td>
         <td class="c" data-l="Qty">${rk('qty', fmtQty(l.qty), '0', 'num', 'Quantity')}</td>
         <td class="c" data-l="Unit">${ed('row.uom', l.uom, 'unit', { label: 'Unit' })}</td>
         <td class="r" data-l="Unit price">${rk('price', l.unit > 0 ? money(l.unit) : '', '0.00', 'num' + (bad ? ' bad' : ''), 'Unit price')}</td>
-        <td class="r" data-l="Disc. %">${rk('disc', l.disc > 0 ? +l.disc.toFixed(2) : '', '0', 'num', 'Discount percent')}</td>
+        ${showDisc ? `<td class="r" data-l="Disc. %">${rk('disc', l.disc > 0 ? +l.disc.toFixed(2) : '', '0', 'num', 'Discount percent')}</td>` : ''}
         <td class="r q-am" data-l="Amount"><b data-amt>${amt}</b></td>
         <td class="act"><details class="rmenu"><summary aria-label="Row actions" title="Row actions"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></summary>
           <div class="rmenu-b"><button type="button" data-act="up">Move up</button><button type="button" data-act="down">Move down</button><button type="button" data-act="dup">Duplicate</button><button type="button" data-act="tax">${l.taxable ? 'Do not charge tax' : 'Charge tax'}</button>${rent ? `<button type="button" data-act="monthly">${l.monthly ? 'Charge once (one-time)' : 'Charge every month'}</button>` : ''}<button type="button" data-act="del" class="dg">Remove</button></div></details></td></tr>`;
@@ -338,18 +338,16 @@
     const nm = hv('toName'), sumBox = rent ? `<div class="q-sum"><h3>Summary</h3><div class="q-stats"><div><small>One-time setup</small><b>${esc(s)} ${money(T.setup.grand)}</b></div><div><small>Monthly rental</small><b>${esc(s)} ${money(T.month.grand)}</b></div><div class="hi"><small>Initial payment (setup + 1st month)</small><b>${esc(s)} ${money(T.upfront)}</b></div></div>
       ${T.optB ? `<p class="q-optb"><b>Option B, lower setup:</b> setup ${esc(s)} ${money(T.optB.setup)}; rental ${esc(s)} ${money(T.optB.y1)} a month for the first ${T.optB.months} months, then ${esc(s)} ${money(T.optB.monthly)} a month. Initial payment ${esc(s)} ${money(T.optB.upfront)}.</p>` : ''}</div>` : '';
     // the terms
-    const termRows = Q.terms.filter(t => E || t.on).map(t => {
+    const termRows = Q.terms.filter(t => t.on).map(t => {
       const txt = termText(S, Q, t, R), isAuto = t.v == null;
       if (!E) { const shown = t.id === 'period' && !String(txt).trim() ? 'To be confirmed' : txt; return shown.trim() ? `<dt>${esc(t.k)}</dt><dd><span class="ml">${esc(shown)}</span></dd>` : ''; }
-      return `<div class="q-trm${t.on ? '' : ' off'}" data-term="${esc(t.id)}"><label class="sw sm" title="Show this term on the quotation"><input type="checkbox" data-tk="on" ${t.on ? 'checked' : ''} aria-label="Show ${esc(t.k)}"><i></i></label>
-        <div class="tk">${ed('term.k', t.k, 'Term', { label: 'Term name' })}</div><div class="tv">${ed('term.v', txt, 'Type the term', { ml: 1, label: t.k })}${isAuto && (t.id === 'payment' || t.id === 'validity') ? '<small class="auto">worked out from the totals</small>' : ''}${!isAuto && (t.id === 'payment' || t.id === 'validity') ? '<button type="button" class="lnk" data-act="termauto">Back to automatic</button>' : ''}</div>
-        <button type="button" class="x" data-act="termdel" title="Remove this term" aria-label="Remove ${esc(t.k)}">×</button></div>`;
+      return `<div class="q-trm" data-term="${esc(t.id)}"><div class="tk">${ed('term.k', t.k, 'Term', { label: 'Term name' })}</div><div class="tv">${ed('term.v', txt, t.id === 'period' ? 'To be confirmed' : '', { ml: 1, label: t.k })}${!isAuto && (t.id === 'payment' || t.id === 'validity') ? '<button type="button" class="lnk" data-act="termauto">Back to automatic</button>' : ''}</div><button type="button" class="x" data-act="termdel" title="Remove" aria-label="Remove ${esc(t.k)}">×</button></div>`;
     }).join('');
     const excl = Q.excl != null ? Q.excl : exclDefault(rent);
-    const exclHtml = E ? `<ol class="q-exl">${excl.map((x, i) => `<li data-ex="${i}">${ed('ex', x, 'Type an exclusion', { ml: 1, label: 'Exclusion ' + (i + 1) })}<button type="button" class="x" data-act="exdel" title="Remove" aria-label="Remove exclusion ${i + 1}">×</button></li>`).join('')}</ol><button type="button" class="btn quiet sm" data-act="exadd">+ Add an exclusion</button>`
+    const exclHtml = E ? `<ol class="q-exl">${excl.map((x, i) => `<li data-ex="${i}">${ed('ex', x, 'Exclusion', { ml: 1, label: 'Exclusion ' + (i + 1) })}<button type="button" class="x" data-act="exdel" title="Remove" aria-label="Remove exclusion ${i + 1}">×</button></li>`).join('')}</ol><button type="button" class="btn quiet sm" data-act="exadd">+ Add an exclusion</button>`
       : (excl.length ? `<ol>${excl.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : '');
     const bi = Q.bankInfo || {}, bankFilled = bi.bank || bi.no;   // the account name alone is not a bank detail
-    const bankHtml = E ? `<section class="q-block q-bank"><h3>Bank details</h3><div class="q-bk"><div><small>Bank</small>${ed('bank.bank', bi.bank, 'Bank name', { label: 'Bank name' })}</div><div><small>Account name</small>${ed('bank.name', bi.name, 'Account name', { label: 'Account name' })}</div><div><small>Account no.</small>${ed('bank.no', bi.no, 'Account number', { label: 'Account number' })}</div></div>${Q.tbc.bank && !(bi.bank && bi.no) ? '<span class="tbc">to confirm</span>' : ''}</section>`
+    const bankHtml = E ? `<section class="q-block q-bank"><h3>Bank details</h3><div class="q-bk"><div><small>Bank</small>${ed('bank.bank', bi.bank, 'Bank name', { label: 'Bank name' })}</div><div><small>Account name</small>${ed('bank.name', bi.name, 'Account name', { label: 'Account name' })}</div><div><small>Account no.</small>${ed('bank.no', bi.no, 'Account number', { label: 'Account number' })}</div></div></section>`
       : (bankFilled ? `<section class="q-block q-bank"><h3>Bank details</h3><div class="q-bk"><div><small>Bank</small><span>${esc(bi.bank)}</span></div><div><small>Account name</small><span>${esc(bi.name)}</span></div><div><small>Account no.</small><span>${esc(bi.no)}</span></div></div></section>` : '');
     const service = rent && Q.service ? `<section class="q-block q-service"><h3>AMR maintenance and service</h3><p>Service frequency: ${num(Q.perYear, 4)} times a year${num(Q.perYear, 4) === 4 ? ' (every quarter)' : ''}. Total service: ${qty} AMR${qty > 1 ? 's' : ''}.</p>
       <dl>${SERVICE.map(x => `<dt>${x[0]}</dt><dd>${esc(x[1])}</dd>`).join('')}</dl></section>` : '';
@@ -365,14 +363,14 @@
       <section class="q-to"><div><small>Quoted to</small><b>${ed('head.toName', nm, 'Customer name', { label: 'Customer name', print: 'Customer name' })}</b>${E || hv('toAddress') ? `<p>${ed('head.toAddress', hv('toAddress'), 'Customer address', { ml: 1, label: 'Customer address' })}</p>` : ''}${E || hv('attn') ? `<p>${E ? 'Attn: ' : 'Attn: '}${ed('head.attn', hv('attn'), 'Contact person', { label: 'Attention' })}</p>` : ''}</div>
         <div><small>Project</small><b>${ed('head.project', hv('project'), 'Project name', { label: 'Project name' })}</b><p>${esc(M.name || '')}${qty ? `, ${qty} unit${qty > 1 ? 's' : ''}` : ''}</p></div></section>
       <p class="q-intro">${hv('attn') ? `Dear ${esc(hv('attn'))},` : 'Dear Sir or Madam,'}<br>Thank you for your enquiry. We are pleased to quote as follows.</p>
-      <table class="q-table${E ? ' edit' : ''}"><thead><tr><th>No.</th><th>Description</th><th>Qty</th><th>UOM</th><th>Unit price (${esc(s)})</th>${showDisc ? '<th class="nw">Disc.</th>' : ''}<th>Amount (${esc(s)})</th>${E ? '<th class="act"></th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
+      <table class="q-table${E ? ' edit' : ''}"><thead><tr><th class="c-n">No.</th><th>Description</th><th class="c-q">Qty</th><th class="c-u">UOM</th><th class="c-p">Unit price (${esc(s)})</th>${showDisc ? '<th class="nw c-d">Disc.</th>' : ''}<th class="c-a">Amount (${esc(s)})</th>${E ? '<th class="act"></th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
       ${E ? `<div class="q-add">${catalog}</div>` : ''}
       <div class="q-totals"${E ? ' id="qTots"' : ''}>${totalsHtml(S, Q, R)}</div>${sumBox}
-      <section class="q-block"><h3>Terms</h3>${E ? `<div class="q-terms-e">${termRows}</div><button type="button" class="btn quiet sm" data-act="termadd">+ Add a term</button>` : `<dl class="q-terms">${termRows}</dl>`}</section>
+      <section class="q-block"><h3>Terms</h3>${E ? `<div class="q-terms-e">${termRows}</div><details class="addmenu"><summary class="btn quiet sm">+ Add a term or note</summary><div class="addmenu-b">${Q.terms.filter(t => !t.on).map(t => `<button type="button" data-act="termadd" data-id="${esc(t.id)}"><b>${esc(t.k)}</b></button>`).join('')}${Q.notes || Q.noteOpen ? '' : '<button type="button" data-act="noteadd"><b>A note for the customer</b></button>'}<button type="button" data-act="termadd" data-id="new"><b>A new term</b></button></div></details>` : `<dl class="q-terms">${termRows}</dl>`}</section>
       ${E || excl.length ? `<section class="q-block"><h3>Exclusions</h3>${exclHtml}</section>` : ''}
       ${bankHtml}
       <div class="q-end">${service}
-      ${E || Q.notes ? `<section class="q-block"><h3>Notes</h3><p>${ed('notes', Q.notes, 'Anything else you want on the quotation (optional)', { ml: 1, label: 'Notes' })}</p></section>` : ''}
+      ${(E && Q.noteOpen) || Q.notes ? `<section class="q-block"><h3>Notes</h3><p>${ed('notes', Q.notes, 'Note for the customer', { ml: 1, label: 'Notes' })}</p></section>` : ''}
       <section class="q-sign${Q.accept ? ' two' : ''}"><div><p>Best regards,<br><b>${esc(co.legal || co.name)}</b></p><div class="q-line"></div><p>${esc(hv('contact'))}<br><small>Authorised signature</small></p></div>
         ${Q.accept ? `<div><p>${esc(T_.accept)}<br><b>${esc(nm || 'The customer')}</b></p><div class="q-line"></div><p><small>Name, date, chop and signature</small></p></div>` : ''}</section></div>
     </div>`;
@@ -524,11 +522,6 @@
   const getPath = (o, p) => p.split('.').reduce((a, k) => (a == null ? a : a[k]), o);
   function setPath(o, p, v) { const ks = p.split('.'), last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; }
 
-  function estHtml() {
-    const E = estimate(S0, D0), Q = ensure(S0, D0), tx = num(Q.taxPct), s = sym(Q), row = (k, a, b) => `<button type="button" class="qe-row${Q.type === k ? ' on' : ''}" data-est="${k}"><span>${a}</span><b>${b}</b></button>`;
-    return `<small>Estimated quotation <em>from your proposal</em></small>${row('buy', 'To buy', s + ' ' + money(E.buy.sum.grand))}${row('rent', 'To rent', s + ' ' + money(E.rent.setup.grand) + ' setup + ' + s + ' ' + money(E.rent.month.grand) + ' a month')}
-      <p>${esc(E.basis)}. ${(DB.quote || {}).prefill ? `Prices from the AMR selector tool${tx ? `, with ${tx}% tax on everything except installation` : ''}.` : 'The AMR and RCS are from the selector tool prices (with your markup). Customisation, delivery, installation and the site items differ every time, so they are blank for you to fill in and are not in this estimate yet.'}</p>${E.buy.hasCost ? `<p class="qe-cost${E.buy.sell > E.buy.cost + 0.005 ? '' : ' warn'}">${E.buy.sell > E.buy.cost + 0.005 ? `AMR and RCS: cost ${s} ${money(E.buy.cost)}, sold at ${s} ${money(E.buy.sell)}, a margin of ${E.buy.marginPct.toFixed(1)}% (only you see this).` : 'The AMR and RCS are at cost price: set a markup under Pricing.'}</p>` : ''}`;
-  }
   function barHtml(R) {
     const T = R.totals, s = sym(R.Q), st = (l, v, cls) => `<div class="qb-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`, tx = num(R.Q.taxPct);
     return T.rent ? st('One-time setup', s + ' ' + money(T.setup.grand)) + st('Monthly rental', s + ' ' + money(T.month.grand)) + st('Initial payment', s + ' ' + money(T.upfront), 'hi')
@@ -536,40 +529,27 @@
   }
   function checkHtml(R) {
     const n = R.checkInfo.length;
-    return n ? `<details class="qcheck"><summary><b>${n} thing${n > 1 ? 's' : ''} to check</b> before you send it</summary><ul>${R.checkInfo.map(c => `<li>${esc(c.msg)}${c.confirm && R.Q.tbc[c.key] ? ` <button type="button" class="lnk" data-ok="${c.key}">It is right</button>` : ''}</li>`).join('')}</ul></details>`
-      : '<div class="qcheck ok"><b>All set.</b> Everything needed is filled in.</div>';
-  }
-  function staleHtml() {
-    let p; try { p = syncPlan(S0, D0); } catch (e) { return ''; }
-    return p.stale ? `<div class="qstale"><b>The proposal has changed</b> since these items were made (AMR, stations, doors or charging).<button type="button" class="btn sm" data-sync>Sync from proposal</button></div>` : '';
+    return n ? `<details class="qcheck"><summary><b>${n} thing${n > 1 ? 's' : ''} to check</b></summary><ul>${R.checkInfo.map(c => `<li>${esc(c.msg)}${c.confirm && R.Q.tbc[c.key] ? ` <button type="button" class="lnk" data-ok="${c.key}">It is right</button>` : ''}</li>`).join('')}</ul></details>`
+      : '<div class="qcheck ok"><b>All set</b></div>';
   }
   const sec = (id, title, sum, body) => `<details class="qsec" data-sec="${id}"${openSecs[id] ? ' open' : ''}><summary><span class="qs-ico">${svg(ICON[id])}</span><span class="qs-t">${title}</span><span class="qs-s" data-sum="${id}">${esc(sum)}</span>
     <svg class="qs-chev" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary><div class="qs-b">${body}</div></details>`;
   function summaries(R) {
     const Q = R.Q, rent = Q.type === 'rent';
-    return { setup: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${Q.currency}`, price: (num(Q.markup) ? `Markup ${num(Q.markup)}%` : 'No markup') + (num(Q.disc.v) ? ' · discount' : ''), more: rent ? (Q.service ? `${num(Q.perYear, 4)} visits a year` : 'No service page') : 'Acceptance block', revs: `Rev ${num(Q.rev, 1)} · ${STATUS[Q.status] || 'Draft'}`, reg: reg.list.length ? `${reg.list.length} quotation${reg.list.length > 1 ? 's' : ''}` : '' };
+    return { setup: `${rent ? 'Rent, ' + Q.termYears + ' years' : 'Buy'} · ${Q.currency}`, more: rent ? (Q.service ? `${num(Q.perYear, 4)} visits a year` : 'No service page') : 'Acceptance block', revs: `Rev ${num(Q.rev, 1)} · ${STATUS[Q.status] || 'Draft'}`, reg: reg.list.length ? `${reg.list.length} quotation${reg.list.length > 1 ? 's' : ''}` : '' };
   }
   function railHtml(R) {
     const Q = R.Q, rent = Q.type === 'rent', sm = summaries(R), s = sym(Q);
-    const setup = fld('Quotation type', seg('type', Q.type, [['rent', 'Rent'], ['buy', 'Buy']]), '', 'div')
-      + (rent ? fld('Contract term', seg('termYears', Q.termYears, [[3, '3 years'], [5, '5 years']]), '', 'div') : '')
-      + fld('Currency', `<select data-qf="currency">${Object.keys(CURS).map(c => `<option value="${c}"${Q.currency === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`, 'qf-s')
-      + (Q.currency !== 'MYR' ? '<p class="qnote">Prices are typed in this currency. Nothing is converted, and the standard RM amounts in the price list are not changed.</p>' : '')
-      + `<div class="qgrid">${fld('Tax name', `<input data-qf="taxLabel" value="${esc(Q.taxLabel)}">`)}${fld('Tax rate', `<div class="inp"><input inputmode="decimal" data-qf="taxPct" value="${num(Q.taxPct)}"><i class="r">%</i></div>`)}</div>`
-      + `<p class="qnote">${Q.tbc.tax ? '<span class="tbc">to confirm</span> ' : ''}The rate used in the selector tool, on every item except installation. Confirm it with accounts, then set 0 if tax is not charged.</p>`;
-    const price = fld('Standard markup on the cost', `<div class="inp"><input inputmode="decimal" data-qf="markup" value="${num(Q.markup) || ''}" placeholder="0"><i class="r">%</i></div>`, 'qf-s')
-      + '<p class="qnote">The selector tool prices for the AMR and the RCS are your cost, so this markup is added on top (only you see it). Set a markup for every item, a margin or a total to aim for in the Costing view, and type a cost on any other item to price it the same way.</p>'
-      + '<button type="button" class="btn quiet qsave" data-save-markup>Use this markup for new quotations</button>'
+    const setup = (rent ? fld('Contract term', seg('termYears', Q.termYears, [[3, '3 years'], [5, '5 years']]), '', 'div') : '')
+      + `<div class="qgrid">${fld('Currency', `<select data-qf="currency">${Object.keys(CURS).map(c => `<option value="${c}"${Q.currency === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`)}${fld('Tax rate', `<div class="inp"><input inputmode="decimal" data-qf="taxPct" value="${num(Q.taxPct)}"><i class="r">%</i></div>`)}</div>`
       + fld('Extra discount on the whole quotation', `${seg('disc.mode', Q.disc.mode, [['pct', '%'], ['amt', s]])}<div class="inp"><input inputmode="decimal" data-qf="disc.v" value="${num(Q.disc.v) || ''}" placeholder="0"><i class="r">${Q.disc.mode === 'pct' ? '%' : esc(s)}</i></div>`, '', 'div')
-      + '<p class="qnote">Per-item discounts are in the table. For a rental, this one is taken off the one-time setup.</p>'
-      + tog('internal', Q.internal, 'Show our cost and profit on the page', 'only you see these; they are never printed. Switch off before sharing your screen.');
-    const more = (rent ? tog('service', Q.service, 'Add the maintenance and service page') + (Q.service ? fld('Service visits a year', `<input inputmode="numeric" data-qf="perYear" value="${num(Q.perYear, 4)}">`, 'qf-s') : '')
-        + tog('optB.on', Q.optB.on, 'Offer a lower setup fee (option B)', 'the saving is paid back through a higher rental for a while')
+      + tog('showDisc', Q.showDisc, 'Discount column on each item') + tog('internal', Q.internal, 'Show our cost on each item');
+    const more = (rent ? tog('service', Q.service, 'Maintenance and service page') + (Q.service ? fld('Service visits a year', `<input inputmode="numeric" data-qf="perYear" value="${num(Q.perYear, 4)}">`, 'qf-s') : '')
+        + tog('optB.on', Q.optB.on, 'Lower setup fee (option B)')
         + (Q.optB.on ? `<div class="qgrid">${fld('Reduce setup by', `<div class="inp"><i>${esc(s)}</i><input inputmode="decimal" data-qf="optB.reduction" value="${num(Q.optB.reduction) || ''}"></div>`)}${fld('Paid back over', `<div class="inp"><input inputmode="numeric" data-qf="optB.months" value="${num(Q.optB.months, 12)}"><i class="r">months</i></div>`)}</div>` : '') : '')
-      + tog('accept', Q.accept, 'Customer acceptance block', 'chop and signature line for the customer')
-      + '<button type="button" class="btn quiet qsave" data-save-bank>Use these bank details for new quotations</button>';
-    return `${staleHtml()}<div id="qEst" class="qest">${estHtml()}</div><div id="qCheck">${checkHtml(R)}</div>${sec('setup', 'Quotation setup', sm.setup, setup)}${sec('price', 'Pricing', sm.price, price)}${sec('more', 'More', sm.more, more)}${sec('revs', 'Revisions', sm.revs, revsHtml(R))}${reg.on ? sec('reg', 'Saved quotations', sm.reg, '<div id="qRegList">' + regRows() + '</div><p class="qnote">Every quotation number, its revisions and the PDFs are kept on this PC in the Quotations folder.</p>') : sec('reg', 'Quotation numbers', 'this browser', '<p class="qnote">Numbers are counted on this browser only. Start the tool with Start.bat to keep one shared register on this PC, with every revision and a copy of each PDF.</p>')}
-      <p class="qhint">The proposal PDF never shows a price. <b>Download PDF</b> saves this quotation as its own PDF.</p>`;
+      + tog('accept', Q.accept, 'Customer acceptance block')
+      + '<button type="button" class="btn quiet qsave" data-save-bank>Save these bank details for new quotations</button>';
+    return `<div class="qd-h"><span>Settings</span><button type="button" class="x" data-close title="Close" aria-label="Close settings">×</button></div><div id="qCheck">${checkHtml(R)}</div>${sec('setup', 'Quotation', sm.setup, setup)}${sec('more', 'Options', sm.more, more)}${sec('revs', 'Revisions', sm.revs, revsHtml(R))}${reg.on ? sec('reg', 'Saved quotations', sm.reg, '<div id="qRegList">' + regRows() + '</div>') : ''}`;
   }
 
   /* ---------- drawing ---------- */
@@ -600,12 +580,12 @@
       paintNumbers(R); paintCost(R);
       const c = $('#qCheck'); if (c) { const open = c.querySelector('details') && c.querySelector('details').open; c.innerHTML = checkHtml(R); if (open) { const d = c.querySelector('details'); if (d) d.open = true; } }
       const sm = summaries(R); Object.keys(sm).forEach(k => { const e = rail.querySelector(`[data-sum="${k}"]`); if (e) e.textContent = sm[k]; });
-      const es = $('#qEst'); if (es) es.innerHTML = estHtml();
     }
     const bar = $('#qTotal'), costMode = $('#quote').dataset.qm === 'cost'; if (bar) { bar.innerHTML = costMode ? barCostHtml(R) : barHtml(R); bar.classList.toggle('int', costMode); }
     const st = $('#qStatus'); if (st) { st.className = 'qchip' + (R.checks.length ? '' : ' ok'); st.textContent = R.checks.length ? `${R.checks.length} to check` : 'Ready'; }
     const no = $('#qNo'); if (no) no.textContent = (Q.no || 'Numbering…') + ' · Rev ' + num(Q.rev, 1);
     const ss = $('#qStat'); if (ss && ss.value !== Q.status) ss.value = Q.status;
+    $$('#qType .tab').forEach(b => b.classList.toggle('active', b.dataset.v === Q.type));
     const u = $('#qUndo'), r = $('#qRedo'); if (u) u.disabled = !hist.length; if (r) r.disabled = !redo.length;
     paintBanner(Q);
     if ($('#quote').dataset.qm === 'preview' && sheet) { sheet.innerHTML = previewRev ? revDoc(S0, D0, previewRev) : docHtml(S0, D0); fit(); paintPrevBar(Q); }
@@ -613,11 +593,13 @@
   /* ---------- revisions and the register on the screen ---------- */
   let previewRev = null;
   const rvDate = iso => (iso ? longDate(String(iso).slice(0, 10)) : '');
-  function paintBanner(Q) {   // sent, then changed: say so on top of the page
+  function paintBanner(Q) {   // sent, then changed; or the proposal changed since the items were made
     const b = $('#qBanner'); if (!b) return;
     const lc = lockedChanged(S0, D0), e = revEntry(Q, Q.rev);
-    b.hidden = !lc;
-    if (lc) b.innerHTML = `<span><b>Rev ${num(Q.rev, 1)} was ${esc(e.status)}</b> and you have changed it since. Changes should go out as a new revision, so Rev ${num(Q.rev, 1)} stays as the customer has it.</span><button type="button" class="btn sm" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button>`;
+    let stale = false; if (!lc) { try { stale = syncPlan(S0, D0).stale; } catch (err) { stale = false; } }
+    b.hidden = !(lc || stale);
+    if (lc) b.innerHTML = `<span><b>Rev ${num(Q.rev, 1)} was ${esc(e.status)}</b> and you have changed it. Start Rev ${num(Q.rev, 1) + 1} to keep Rev ${num(Q.rev, 1)} as sent.</span><button type="button" class="btn sm" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button>`;
+    else if (stale) b.innerHTML = `<span><b>The proposal has changed</b> since these items were made.</span><button type="button" class="btn sm" data-sync>Sync from proposal</button>`;
   }
   function paintPrevBar(Q) {
     const b = $('#qPrevBar'); if (!b) return;
@@ -629,15 +611,15 @@
   function costSummary(R) {
     const Q = R.Q, T = R.totals, s = sym(Q), stat = (l, v, cls) => `<div class="qc-s${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></div>`;
     return T.groups.map(g => `<section class="qc-g"><h3>${esc(g.label)}</h3>${g.n ? `<div class="qc-stats">${stat('Our cost', s + ' ' + money(g.cost))}${stat('Selling price, before tax', s + ' ' + money(g.total))}${stat('Profit', s + ' ' + money(g.profit), g.profit > 0.005 ? 'pos' : 'neg')}${stat('Margin on the price', pct1(g.marginPct))}${stat('Markup on the cost', pct1(g.markupPct))}</div>`
-        : `<div class="qc-stats">${stat('Selling price, before tax', s + ' ' + money(g.total))}</div><p class="qnote">No item here has a cost yet. Type a cost on an item below to see the profit.</p>`}
-      ${g.n && g.un ? `<p class="qnote">${g.un} item${g.un > 1 ? 's have' : ' has'} no cost entered${g.unSell ? ` (${s} ${money(g.unSell)} of the price)` : ''} and ${g.un > 1 ? 'are' : 'is'} left out of the profit: ${esc(g.unNames.join(', '))}.</p>` : ''}</section>`).join('')
+        : `<div class="qc-stats">${stat('Selling price, before tax', s + ' ' + money(g.total))}</div><p class="qnote">No cost entered yet.</p>`}
+      ${g.n && g.un ? `<p class="qnote">${g.un} item${g.un > 1 ? 's' : ''} without a cost ${g.un > 1 ? 'are' : 'is'} not counted in the profit.</p>` : ''}</section>`).join('')
       + (T.rent ? rentCheck(R) : '');
   }
   function rentCheck(R) {   // the rent against what the AMRs cost to buy (the selector price)
     const Q = R.Q, M = (D0 && D0.model) || {}, qty = Math.max(1, (D0 && D0.qty) || 1), mo = R.totals.month.net, cost = num(M.unitPrice) * qty, s = sym(Q);
     if (!(mo > 0) || !(cost > 0)) return '';
     const years = num(Q.termYears, 5), total = mo * 12 * years;
-    return `<section class="qc-g"><h3>Rental check</h3><p class="qnote">${qty} AMR${qty > 1 ? 's' : ''} cost ${s} ${money(cost)} to buy (the selector price). At ${s} ${money(mo)} a month, before tax, they pay back in <b>${(cost / mo).toFixed(1)} months</b>. Over the ${years}-year contract the rent comes to ${s} ${money(total)}, which is ${(total / cost).toFixed(1)} times the cost of the AMRs.</p></section>`;
+    return `<section class="qc-g"><h3>Rental check</h3><p class="qnote">${qty} AMR${qty > 1 ? 's' : ''} cost ${s} ${money(cost)} to buy. They pay back in <b>${(cost / mo).toFixed(1)} months</b>; the ${years}-year rent is ${(total / cost).toFixed(1)} times that.</p></section>`;
   }
   function costRow(l, rent) {
     const ci = (k, v, ph, lab, dis) => `<input class="cell num" inputmode="decimal" autocomplete="off" data-rk="${k}" value="${esc(v)}" placeholder="${ph}" aria-label="${lab}"${dis ? ' disabled' : ''}>`, s = sym(R0.Q);
@@ -658,14 +640,14 @@
     const tool = (id, label, inner, btn, key) => `<div class="qc-tl"><label class="qf"><span>${label}</span>${inner}</label><button type="button" class="btn sm" data-ct="${key}">${btn}</button></div>`;
     const pctBox = (v, ph) => `<div class="inp"><input inputmode="decimal" data-ci="${ph}" value="${v}" placeholder="0"><i class="r">%</i></div>`;
     const steps = [0, 10, 50, 100, 500, 1000];
-    return `<div class="qc-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span><b>Costing: internal.</b> Only you see this page. Costs, markup and profit are never printed and never go in the PDF, which is the only thing the client sees.</span></div>
+    return `<div class="qc-note"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span><b>Costing: internal.</b> Never printed, never in the PDF.</span></div>
       <div class="qc-side"><div id="qcSum">${costSummary(R)}</div>
         <section class="qc-tools"><h3>Set the pricing</h3>
           ${tool('mk', 'Markup on the cost, for every item that has a cost', pctBox(num(Q.markup) || '', 'markup'), 'Apply', 'markup')}
           ${tool('mg', 'Or the margin you want on the price', pctBox(g0 && g0.n ? +g0.marginPct.toFixed(1) : '', 'margin'), 'Apply', 'margin')}
           ${tool('tt', `Or the total you want, before tax (${esc(s)})`, `<div class="inp"><i>${esc(s)}</i><input inputmode="decimal" data-ci="total" value="${g0 ? money(g0.total) : ''}" placeholder="0.00"></div>`, 'Work out the markup', 'total')}
           ${tool('rd', 'Round the unit prices up to', `<select data-ci="round">${steps.map(v => `<option value="${v}">${v ? s + ' ' + v : 'no rounding'}</option>`).join('')}</select>`, 'Round up', 'round')}
-          <p class="qc-msg" id="qcMsg" role="status"></p><p class="qnote">The markup is added to the cost of each item that has one. Items with no cost keep the price you typed. Everything also works on the page itself, and Undo takes any of it back.</p></section></div>
+          <p class="qc-msg" id="qcMsg" role="status"></p><button type="button" class="lnk" data-save-markup>Use this markup as my standard</button></section></div>
       <div class="qc-table"><div class="qc-head"><span></span><span>Item</span><span>Qty</span><span>Our unit cost</span><span>Markup</span><span>Unit price</span><span>Disc.</span><span>Price</span><span>Profit</span></div>${R.lines.map(l => costRow(l, rent)).join('')}
         <button type="button" class="btn quiet sm qc-addhint" data-qm-go="edit">Add or change items on the quotation page</button></div>`;
   }
@@ -691,6 +673,7 @@
   }
   function onCostClick(e) {
     const go = e.target.closest('[data-qm-go]'); if (go) { setMode(go.dataset.qmGo); return; }
+    const sv = e.target.closest('[data-save-markup]'); if (sv) { const x = parseNum(($('#qCost [data-ci="markup"]') || {}).value); if (x == null || Number.isNaN(x) || x < 0) return; sv.textContent = lsSet(MKEY, String(x)) ? 'Saved: new quotations start at ' + x + '%' : 'Could not save'; return; }
     const b = e.target.closest('[data-ct]'); if (!b) return;
     const k = b.dataset.ct, val = id => { const el = $(`#qCost [data-ci="${id}"]`); return el ? (el.tagName === 'SELECT' ? +el.value : parseNum(el.value)) : null; };
     const s = sym(ensure(S0, D0)); let said = '';
@@ -705,15 +688,16 @@
     } else if (k === 'round') { const x = val('round'); if (!(x > 0)) return fail('Choose what to round up to.'); mutate('ct', () => { const n = roundUp(S0, D0, x); said = `${n} unit price${n === 1 ? '' : 's'} rounded up to the next ${s} ${x}.`; }, () => say(said + after())); }
   }
   function say(t) { const m = $('#qcMsg'); if (m) { m.textContent = t; m.className = 'qc-msg'; } }
+  function openDrawer(open) { const qz = $('#quote'), on = open == null ? !qz.classList.contains('qdrawer') : !!open; qz.classList.toggle('qdrawer', on); const r = $('#qRail'); if (r) r.setAttribute('aria-hidden', on ? 'false' : 'true'); }
   function setMode(m) { previewRev = null; const qz = $('#quote'); qz.dataset.qm = m; $$('#qMode .tab').forEach(t => t.classList.toggle('active', t.dataset.qm === m)); refresh(false); fit(); setTimeout(fit, 60); }
   function revsHtml(R) {
     const Q = R.Q, hist = (Q.history || []).slice().sort((a, b) => b.rev - a.rev), cs = c => CURS[c] || c || 'RM';
     const cur = `<div class="rv cur"><div class="rv-h"><b>Rev ${num(Q.rev, 1)}</b><span class="rvs ${esc(Q.status)}">${STATUS[Q.status] || 'Draft'}</span><small>current</small></div>${Q.revNote ? `<p>${esc(Q.revNote)}</p>` : ''}</div>`;
     const rows = hist.map(h => `<div class="rv"><div class="rv-h"><b>Rev ${h.rev}</b><span class="rvs ${esc(h.status)}">${STATUS[h.status] || esc(h.status)}</span><small>${esc(rvDate(h.at))}</small><em>${esc(cs(h.currency))} ${money(h.total)}</em></div>${h.note ? `<p>${esc(h.note)}</p>` : ''}
       <div class="rv-b"><button type="button" class="btn quiet sm" data-prev-rev="${h.rev}">Preview</button><button type="button" class="btn quiet sm" data-restore-rev="${h.rev}">Restore</button>${h.pdf && reg.on && Q.no ? `<a class="btn quiet sm" target="_blank" rel="noopener" href="api/quotes/file?no=${encodeURIComponent(Q.no)}&name=${encodeURIComponent(h.pdf)}">PDF</a>` : ''}</div></div>`).join('');
-    return `${cur}<button type="button" class="btn sm qsave" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button><p class="qnote">Keeps Rev ${num(Q.rev, 1)} exactly as it is now, and lets you change the quotation as Rev ${num(Q.rev, 1) + 1}.</p>`
-      + fld('What changes in this revision? (optional)', `<input data-qf="revNote" value="${esc(Q.revNote)}" placeholder="Shown here only, not on the quotation">`)
-      + (rows ? `<h4 class="qh">Recorded revisions</h4>${rows}` : '<p class="qnote">Nothing recorded yet. A revision is recorded when you generate the PDF or mark the quotation as sent.</p>');
+    return `${cur}<button type="button" class="btn sm qsave" data-newrev>Start Rev ${num(Q.rev, 1) + 1}</button>`
+      + fld('Note for this revision', `<input data-qf="revNote" value="${esc(Q.revNote)}">`)
+      + (rows ? `<h4 class="qh">Recorded revisions</h4>${rows}` : '');
   }
   function regRows() {
     const cs = c => CURS[c] || c || '';
@@ -825,8 +809,13 @@
     }
     if (act === 'exadd') { mutate('exadd', q => { q.excl = (q.excl || exclDefault(q.type === 'rent')).concat(['']); }, () => { const l = $$('#qPaper .q-exl li .ed'); if (l.length) l[l.length - 1].focus(); }); return; }
     if (act === 'exdel') { const i = +b.closest('[data-ex]').dataset.ex; mutate('exdel', q => { q.excl = (q.excl || exclDefault(q.type === 'rent')).filter((x, j) => j !== i); }); return; }
-    if (act === 'termadd') { const id = uid(); mutate('tadd', q => { q.terms.push({ id, k: 'New term', v: '', on: true }); }, () => { const el = $(`#qPaper [data-term="${CSS.escape(id)}"] .tv .ed`); if (el) el.focus(); }); return; }
-    if (act === 'termdel') { const id = b.closest('[data-term]').dataset.term; mutate('tdel', q => { q.terms = q.terms.filter(t => t.id !== id); }); return; }
+    if (act === 'noteadd') { mutate('nadd', q => { q.noteOpen = true; }, () => { const el = $('#qPaper [data-f="notes"]'); if (el) el.focus(); }); return; }
+    if (act === 'termadd') {
+      const tid = b.dataset.id;
+      if (tid && tid !== 'new') { mutate('tadd', q => { const t = q.terms.find(x => x.id === tid); if (t) t.on = true; }, () => { const el = $(`#qPaper [data-term="${CSS.escape(tid)}"] .tv .ed`); if (el) el.focus(); }); return; }
+      const id = uid(); mutate('tadd', q => { q.terms.push({ id, k: 'New term', v: '', on: true }); }, () => { const el = $(`#qPaper [data-term="${CSS.escape(id)}"] .tv .ed`); if (el) el.focus(); }); return;
+    }
+    if (act === 'termdel') { const id = b.closest('[data-term]').dataset.term; mutate('tdel', q => { const t = q.terms.find(x => x.id === id); if (t && /^m/.test(t.id)) q.terms = q.terms.filter(x => x.id !== id); else if (t) t.on = false; }); return; }
     if (act === 'termauto') { const id = b.closest('[data-term]').dataset.term; mutate('tauto', q => { const t = q.terms.find(x => x.id === id); if (t) t.v = null; }); return; }
     const tr = b.closest('[data-row]'); if (!tr) return; const rows = Q.items[Q.type], i = rows.findIndex(x => x.id === tr.dataset.row); if (i < 0) return;
     if (act === 'up' && i > 0) mutate('up', q => { const a = q.items[q.type]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; });
@@ -894,6 +883,10 @@
     document.addEventListener('click', e => { $$('#qPaper details.rmenu[open], #qPaper details.addmenu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; }); });
     const on = (id, fn) => { const el = $(id); if (el) el.addEventListener('click', fn); };
     on('#qGen', () => { const b = document.getElementById('btnPdf'); if (b) b.click(); });
+    on('#qSet', () => openDrawer()); on('#qScrim', () => openDrawer(false));
+    on('#qStatus', () => { openDrawer(true); const d = $('#qCheck details'); if (d) d.open = true; });
+    const typ = $('#qType'); if (typ) typ.addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b && b.dataset.v !== ensure(S0, D0).type) setType(b.dataset.v); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#quote').classList.contains('qdrawer')) openDrawer(false); });
     on('#qUndo', () => restore(hist, redo)); on('#qRedo', () => restore(redo, hist)); on('#qSync', doSync);
     const ss = $('#qStat'); if (ss) ss.addEventListener('change', () => {
       const Q = ensure(S0, D0), want = ss.value;
@@ -904,6 +897,8 @@
     qz.addEventListener('click', e => {
       const t = e.target; let b;
       if ((b = t.closest('[data-newrev]'))) askRevision();
+      else if (t.closest('[data-sync]')) doSync();
+      else if (t.closest('[data-close]')) openDrawer(false);
       else if ((b = t.closest('[data-prev-rev]'))) showRev(+b.dataset.prevRev);
       else if ((b = t.closest('[data-restore-rev]'))) askRestore(+b.dataset.restoreRev);
       else if (t.closest('[data-back]')) { previewRev = null; $('#quote').dataset.qm = 'edit'; $$('#qMode .tab').forEach(x => x.classList.toggle('active', x.dataset.qm === 'edit')); refresh(false); }

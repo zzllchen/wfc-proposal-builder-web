@@ -83,6 +83,7 @@
   // Proposal and Simulation are two views of the same open proposal; the simulation redraws whenever the proposal changes
   function setTab(name) {
     document.body.dataset.tab = name; $$('#tabs .tab').forEach(x => x.classList.toggle('active', x.dataset.tab === name)); $('#sim').hidden = name !== 'sim'; $('#concept').hidden = name !== 'concept'; $('#quote').hidden = name !== 'quote'; $('#btnPdf').title = name === 'quote' ? 'Download the quotation as a PDF' : 'Download the proposal as a PDF';
+    if (window.WFCPanel) WFCPanel.hold(name === 'quote');   // the quotation gets the whole width; the arrow on the divider brings the form panel back
     if (name !== 'concept' && window.WFCConcept) WFCConcept.stop();
     if (name === 'sim') { closeEditor(); if (window.WFCSimUI) WFCSimUI.update(S, D); } else if (name === 'concept') { closeEditor(); if (window.WFCConcept) WFCConcept.update(S); } else if (name === 'quote') { closeEditor(); if (window.WFCQuote) WFCQuote.update(S, derive()); } else { stageHtml = ''; flush(); }
   }

@@ -144,23 +144,26 @@
     </section>
     <section id="quote" hidden aria-label="Quotation" data-qm="edit">
       <header class="qbar">
-        <h2>Quotation</h2><span id="qNo" class="qno"></span>
+        <div class="seg qmode" id="qMode" role="group" aria-label="View"><button type="button" class="tab" data-qm="cost">Costing</button><button type="button" class="tab active" data-qm="edit">Quotation</button><button type="button" class="tab" data-qm="preview">Preview</button></div>
+        <div class="seg qtype" id="qType" role="group" aria-label="Rent or buy"><button type="button" class="tab" data-v="rent">Rent</button><button type="button" class="tab" data-v="buy">Buy</button></div>
+        <span id="qNo" class="qno"></span>
         <select id="qStat" class="qstat" aria-label="Quotation status"><option value="draft">Draft</option><option value="sent">Sent</option><option value="accepted">Accepted</option></select>
-        <span id="qStatus" class="qchip">Ready</span>
         <div class="sp"></div>
+        <button type="button" id="qStatus" class="qchip" title="What to check before you send it">Ready</button>
         <button type="button" class="btn quiet qi" id="qUndo" title="Undo" aria-label="Undo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
         <button type="button" class="btn quiet qi" id="qRedo" title="Redo" aria-label="Redo" disabled><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
-        <button type="button" class="btn quiet" id="qSync" title="Bring the items up to date with the proposal"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg><span class="lbl">Sync from proposal</span></button>
+        <button type="button" class="btn quiet" id="qSync" title="Bring the items up to date with the proposal"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5M3 21v-5h5"/></svg><span class="lbl">Sync</span></button>
+        <button type="button" class="btn quiet" id="qSet" title="Settings, revisions and saved quotations"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span class="lbl">Settings</span></button>
         <button type="button" class="btn primary sm" id="qGen" title="Download the official quotation as a PDF"><svg class="ico" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg><span class="lbl">Generate quotation</span></button>
-        <div class="seg qmode" id="qMode" role="group" aria-label="View"><button type="button" class="tab" data-qm="cost">Costing</button><button type="button" class="tab active" data-qm="edit">Quotation</button><button type="button" class="tab only-narrow" data-qm="settings">Settings</button><button type="button" class="tab" data-qm="preview">Preview</button></div>
       </header>
       <div class="qbody">
         <div class="qmain" id="qMain"><div class="qbanner" id="qBanner" role="status" hidden></div><div class="qpaperwrap"><div class="qpaper" id="qPaper"></div></div></div>
-        <aside class="qrail" id="qRail" aria-label="Quotation settings and checks"></aside>
         <div class="qcost" id="qCost"></div>
         <div class="qprev" id="qPrev"><div class="qprevbar" id="qPrevBar" hidden></div><div class="qsheetwrap"><div class="qsheet" id="qSheet"></div></div></div>
       </div>
       <footer class="qtotal" id="qTotal" aria-live="polite"></footer>
+      <div class="qscrim" id="qScrim"></div>
+      <aside class="qrail" id="qRail" aria-label="Quotation settings" aria-hidden="true"></aside>
     </section>
     <section id="concept" hidden>
       <div class="cvbar">
