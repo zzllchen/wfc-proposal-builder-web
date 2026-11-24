@@ -94,6 +94,7 @@
       head: {}, items: {}, sig: {}, history: [], revNote: '', uid: 'q' + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-4), terms: null, excl: null, notes: '', service: true, perYear: 4, accept: true, optB: { on: false, reduction: 0, months: 12 }, internal: false, showDisc: false, noteOpen: false, tbc: { tax: 1, period: 1, bank: 1 }, bankInfo: defaultBank() };
     Object.keys(d).forEach(k => { if (Q[k] === undefined) Q[k] = d[k]; });
     Q.v = 2;
+    if (Q.ui !== 2) { Q.ui = 2; Q.internal = false; }   // the simpler page: a quotation made before it starts with the cost boxes off (Settings brings them back)
     if (!Q.date) Q.date = (S.client && /^\d{4}-\d{2}-\d{2}/.test(S.client.date || '') && S.client.date.slice(0, 10)) || today();
     if (!Q.terms) Q.terms = defaultTerms(Q.type);
     if (legacy) {   // a quotation saved by the first version of this tab: keep what was typed
