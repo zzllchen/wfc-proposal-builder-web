@@ -195,6 +195,12 @@ details.more[open] { padding-bottom: 8px; }
 .switch input:checked + .track::after { transform: translateX(16px); }
 .switch input:focus-visible + .track { box-shadow: var(--ring); }
 #stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+#stage.zoomed { overflow: auto; scrollbar-width: thin; }
+#stage.zoomed #stageSlide { margin: auto; flex: none; }
+.szoom { display: flex; align-items: center; gap: 2px; padding: 3px; background: #fff; border: 1px solid var(--hair, #E3E8F2); border-radius: 99px; }
+.szoom button { min-width: 30px; height: 30px; padding: 0 8px; border: 0; border-radius: 99px; background: transparent; font: inherit; font-size: 16px; font-weight: 600; color: var(--text-2, #3A4766); cursor: pointer; }
+.szoom button:hover { background: #EEF2FB; color: var(--ink, #0B1220); }
+.szoom .sz-v { min-width: 52px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .slidewrap { position: relative; box-shadow: 0 10px 30px rgba(11,18,32,.14), 0 1px 3px rgba(11,18,32,.08); border-radius: 8px; overflow: hidden; background: #fff; }
 .slidewrap.off::after, .sc-item.off .sc-slide::after { content: 'Not in the proposal'; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(11,18,32,.86); color: #fff; padding: 8px 16px; border-radius: 999px; font-weight: 600; white-space: nowrap; }
 .slidewrap.off .scaler { opacity: .35; }
@@ -214,7 +220,7 @@ details.more[open] { padding-bottom: 8px; }
 
 /* ---------- view switch and scroll view ---------- */
 body[data-view="scroll"] .pager, body[data-view="scroll"] #editLayout, body[data-view="scroll"] .switch { display: none; }
-#scroll { flex: 1; min-height: 0; overflow-y: auto; background: #EBEFF6; border-radius: var(--r-lg); padding: 24px 0 48px; scroll-behavior: smooth; }
+#scroll { flex: 1; min-height: 0; overflow: auto; background: #EBEFF6; border-radius: var(--r-lg); padding: 24px 0 48px; scroll-behavior: smooth; }
 .sc-col { margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
 .sc-meta { display: flex; justify-content: space-between; align-items: center; padding: 0 4px 8px; font-size: 13px; font-weight: 600; color: var(--text-3); }
 .sc-meta label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; min-height: 32px; }
@@ -925,3 +931,4 @@ body.resizing iframe, body.resizing video, body.resizing canvas { pointer-events
 #pQueue .qrow { flex-wrap: nowrap; overflow: hidden; height: 26px; }
 #pQueue .qnone { height: 26px; line-height: 26px; margin-top: 10px; }
 @media (max-width: 1100px) { #pQueue { height: auto; min-height: 84px; } }
+@media (max-width: 900px) { .szoom { display: none; } }

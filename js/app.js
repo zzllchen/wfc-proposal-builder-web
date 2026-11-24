@@ -72,6 +72,8 @@
   }
   /* ---------- scroll view: the whole proposal as one page to read down ---------- */
   let viewMode = 'slides', scrollSig = '', scrollObs = null;
+  let sz = 1;   // the zoom of the slides (not of the whole page); 1 = fit
+  try { const n = parseFloat(localStorage.getItem('wfc-slide-zoom')); if (n >= 0.3 && n <= 4) sz = n; } catch (e) { /* first visit */ }
   const scrollSeen = new Set(), scrollCache = {};
   function setView(mode) {
     if (mode === 'scroll') closeEditor();
@@ -89,7 +91,7 @@
   }
   function renderScroll() {
     if (viewMode !== 'scroll') return;
-    const box = $('#scroll'), W = Math.round(Math.max(360, Math.min(box.clientWidth - 56, 1180))), k = W / 1920, H = Math.round(1080 * k);
+    const box = $('#scroll'), W = Math.round(Math.max(360, Math.min(box.clientWidth - 56, 1180)) * sz), k = W / 1920, H = Math.round(1080 * k);
     const sig = out.map(s => s.id + (S.slides.off[s.id] ? 0 : 1)).join() + '|' + W;
     if (sig !== scrollSig) {
       scrollSig = sig; scrollSeen.clear(); Object.keys(scrollCache).forEach(q => delete scrollCache[q]);
@@ -366,8 +368,10 @@
   }
   function drawStage() {
     const s = out.find(x => x.id === cur) || out[0]; if (!s) return; cur = s.id;
-    const stage = $('#stage'), w = stage.clientWidth, h = stage.clientHeight;
-    const sc = Math.max(0.05, Math.min(w / 1920, h / 1080));
+    const stage = $('#stage'), w = stage.offsetWidth, h = stage.offsetHeight;
+    const sc = Math.max(0.05, Math.min(w / 1920, h / 1080) * sz);
+    stage.classList.toggle('zoomed', sz !== 1);   // zoomed in: the slide can be bigger than the area and scrolls
+    if (stage._id !== s.id) { stage._id = s.id; stage.scrollTop = 0; stage.scrollLeft = 0; }
     const wr = $('#stageSlide'), sca = wr.firstElementChild;
     wr.style.width = (1920 * sc) + 'px'; wr.style.height = (1080 * sc) + 'px'; sca.style.transform = `scale(${sc})`;
     const html = wrapSlide(s, pageNo(s.id));
@@ -473,6 +477,32 @@
     });
     $('#incl').addEventListener('change', e => { S.slides.off[cur] = !e.target.checked; refresh(); });
     $('#prev').addEventListener('click', () => step(-1));
+    // zoom the slides: the buttons, or Ctrl + scroll while the pointer is on the slides. Ctrl + scroll anywhere else (the header, the form panel, the thumbnails) is left to the browser, which zooms the whole page.
+    const slideBox = () => (viewMode === 'scroll' ? $('#scroll') : $('#stage'));
+    function applySlideZoom() {
+      if (viewMode === 'scroll') {
+        const box = $('#scroll'), W = Math.round(Math.max(360, Math.min(box.clientWidth - 56, 1180)) * sz), k = W / 1920, H = Math.round(1080 * k);
+        $$('.sc-col', box).forEach(c => { c.style.width = W + 'px'; });
+        $$('.sc-slide', box).forEach(el => { el.style.width = W + 'px'; el.style.height = H + 'px'; const sc = el.firstElementChild; if (sc) sc.style.transform = `scale(${k})`; });
+        scrollSig = out.map(s => s.id + (S.slides.off[s.id] ? 0 : 1)).join() + '|' + W;
+      } else drawStage();
+      const v = $('#slideZoom .sz-v'); if (v) v.textContent = Math.round(sz * 100) + '%';
+    }
+    function setSlideZoom(v, ev) {
+      const box = slideBox(); if (!box) return;
+      const r = box.getBoundingClientRect(), px = ev ? ev.clientX - r.left : box.clientWidth / 2, py = ev ? ev.clientY - r.top : box.clientHeight / 2;
+      const fx = box.scrollWidth ? (box.scrollLeft + px) / box.scrollWidth : 0, fy = box.scrollHeight ? (box.scrollTop + py) / box.scrollHeight : 0;
+      sz = Math.round(Math.min(4, Math.max(0.3, v)) * 100) / 100;
+      try { localStorage.setItem('wfc-slide-zoom', String(sz)); } catch (e) { /* private mode */ }
+      applySlideZoom();
+      const sb = box.style.scrollBehavior; box.style.scrollBehavior = 'auto';
+      box.scrollLeft = fx * box.scrollWidth - px; box.scrollTop = fy * box.scrollHeight - py;   // the point under the pointer stays under it
+      box.style.scrollBehavior = sb;
+    }
+    window.WFCSlideZoom = { set: setSlideZoom, apply: applySlideZoom };
+    ['#stage', '#scroll'].forEach(id => $(id).addEventListener('wheel', e => { if (!(e.ctrlKey || e.metaKey)) return; e.preventDefault(); setSlideZoom(sz * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e); }, { passive: false }));
+    $('#slideZoom').addEventListener('click', e => { const b = e.target.closest('[data-sz]'); if (!b) return; const k = b.dataset.sz; setSlideZoom(k === 'in' ? sz * 1.2 : k === 'out' ? sz / 1.2 : 1); });
+    applySlideZoom();
     $('#next').addEventListener('click', () => step(1));
     $('#editLayout').addEventListener('click', openEditor);
     $('#tabs').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b && !b.disabled) setTab(b.dataset.tab); });
